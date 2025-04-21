@@ -120,16 +120,16 @@ download_sapiens_models() {
 }
 
 create_conda_env(){
-    conda create --name posecompare python=3.10.13 -y
+    conda create --name poseapi python=3.10.13 -y
     eval "$(conda shell.bash hook)"
-    conda activate posecompare
+    conda activate poseapi
     conda install ipykernel -y
     conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
 }
 
 create_env_from_file(){
     conda env create -f environment.yml
-    conda activate posecompare
+    conda activate poseapi
 }
 
 mediapipe_setup(){
@@ -221,7 +221,7 @@ main(){
     flask_setup || echo_error "Flask minimal setup"
     
     echo "Setup finished!"
-    echo "To start developing the Flask API, activate the conda environment with 'conda activate posecompare'"
+    echo "To start developing the Flask API, activate the conda environment with 'conda activate poseapi'"
 }
 
 main

@@ -1,0 +1,17 @@
+2025-04-08 10:52:44,008 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-04-08 10:52:44,008 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-04-08 10:52:48,479 - werkzeug - INFO - 127.0.0.1 - - [08/Apr/2025 10:52:48] "GET / HTTP/1.1" 200 -
+2025-04-08 10:52:48,612 - werkzeug - INFO - 127.0.0.1 - - [08/Apr/2025 10:52:48] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2025-04-08 10:54:42,043 - werkzeug - INFO - 127.0.0.1 - - [08/Apr/2025 10:54:42] "GET / HTTP/1.1" 200 -
+2025-04-08 10:54:52,129 - werkzeug - INFO - 127.0.0.1 - - [08/Apr/2025 10:54:52] "[33mGET /api/heatmap/generate HTTP/1.1[0m" 404 -
+2025-04-08 10:55:02,234 - werkzeug - INFO - 127.0.0.1 - - [08/Apr/2025 10:55:02] "[31m[1mGET /api/upload HTTP/1.1[0m" 405 -
+2025-04-08 10:55:13,575 - werkzeug - INFO - 127.0.0.1 - - [08/Apr/2025 10:55:13] "OPTIONS /api/upload HTTP/1.1" 200 -
+2025-04-08 10:55:19,134 - werkzeug - INFO - 127.0.0.1 - - [08/Apr/2025 10:55:19] "[31m[1mHEAD /api/upload HTTP/1.1[0m" 405 -
+2025-04-08 10:55:27,065 - werkzeug - INFO - 127.0.0.1 - - [08/Apr/2025 10:55:27] "OPTIONS /api/upload HTTP/1.1" 200 -
+2025-04-08 10:55:32,619 - werkzeug - INFO - 127.0.0.1 - - [08/Apr/2025 10:55:32] "[31m[1mPOST /api/upload HTTP/1.1[0m" 400 -
+2025-04-08 10:57:56,257 - werkzeug - INFO - 127.0.0.1 - - [08/Apr/2025 10:57:56] "[31m[1mPOST /api/upload HTTP/1.1[0m" 400 -
+2025-04-08 11:00:08,607 - werkzeug - INFO - 127.0.0.1 - - [08/Apr/2025 11:00:08] "[31m[1mPOST /api/upload HTTP/1.1[0m" 413 -
+2025-04-08 11:00:23,062 - werkzeug - INFO - 127.0.0.1 - - [08/Apr/2025 11:00:23] "[31m[1mPOST /api/upload HTTP/1.1[0m" 413 -
+2025-04-08 11:01:19,654 - routes.upload - INFO - File saved: uploads\Dumbbell_Alternating_Pendlay_Row_a4ce3645-f1c2-48f5-883b-87d452296dd9.mp4
+2025-04-08 11:01:19,654 - werkzeug - INFO - 127.0.0.1 - - [08/Apr/2025 11:01:19] "[35m[1mPOST /api/upload HTTP/1.1[0m" 201 -
