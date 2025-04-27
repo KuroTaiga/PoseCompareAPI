@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pose Processing API</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        .endpoint {
+            background-color: #f5f5f5;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        .method {
+            font-weight: bold;
+            color: #0066cc;
+        }
+    </style>
+</head>
+<body>
+    <h1>Pose Processing API</h1>
+    <p>Welcome to the Pose Processing API. Use the following endpoints to interact with the API:</p>
+    
+    <div class="endpoint">
+        <p><span class="method">GET</span> /api/session</p>
+        <p>Get the current session or create a new one</p>
+    </div>
+    
+    <div class="endpoint">
+        <p><span class="method">POST</span> /api/upload</p>
+        <p>Upload a video file for processing</p>
+    </div>
+    
+    <div class="endpoint">
+        <p><span class="method">GET</span> /api/files</p>
+        <p>Get files for the current session</p>
+    </div>
+    
+    <div class="endpoint">
+        <p><span class="method">POST</span> /api/process</p>
+        <p>Process a video with selected models and filters</p>
+    </div>
+    
+    <div class="endpoint">
+        <p><span class="method">GET</span> /api/process/available-models</p>
+        <p>Get a list of available models and filters</p>
+    </div>
+    
+    <div class="endpoint">
+        <p><span class="method">GET</span> /api/jobs/{job_id}</p>
+        <p>Get the status of a specific job</p>
+    </div>
+    
+    <div class="endpoint">
+        <p><span class="method">GET</span> /api/jobs/{job_id}/result</p>
+        <p>Get the results of a completed job</p>
+    </div>
+    
+    <div class="endpoint">
+        <p><span class="method">GET</span> /api/info</p>
+        <p>Get API information and status</p>
+    </div>
+    
+    <p>For more information, please check the <a href="https://github.com/KuroTaiga/posecompareapi">documentation</a>.</p>
+</body>
+</html>

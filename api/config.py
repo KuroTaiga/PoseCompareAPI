@@ -1,17 +1,17 @@
 import os
 
-# config.py
-import os
-
 class Config:
-# Flask configuration
+    # Flask configuration
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev_key_replace_in_production')
     MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB max upload size
 
+    SESSION_COOKIE_NAME = 'pose_api_session'
+    SESSION_TYPE = 'filesystem'
+    SESSION_PERMANENT = True  # Maintain session across requests
+    PERMANENT_SESSION_LIFETIME = 3600*5  # 5 hours in seconds
+
     # File paths
-    UPLOAD_FOLDER = 'uploads'
-    RESULTS_FOLDER = 'static/results'
-    HEATMAPS_FOLDER = 'static/heatmaps'
+    STORAGE_BASE_DIR = 'storage'
     ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'webm'}
 
     # Model paths
@@ -35,6 +35,30 @@ class Config:
 
     # Job settings
     JOB_TIMEOUT = 3600  # 1 hour in seconds
+    
+    # Available filters and methods
+    NOISE_FILTERS = [
+        'original',
+        'butterworth',
+        'chebyshev',
+        'bessel'
+    ]
+
+    INTERPOLATION_METHODS = [
+        'no interpolation',
+        'kalman',
+        'wiener',
+        'linear',
+        'bilinear',
+        'spline',
+        'kriging'
+    ]
+
+    HEATMAP_TYPES = {
+        'motion': 'Visualizes movement intensity across the video',
+        'density': 'Shows areas with highest concentration of pose landmarks',
+        'trajectory': 'Tracks the path of key body points through the video'
+    }
 
 class DevelopmentConfig(Config):
     """Development configuration"""
@@ -46,7 +70,7 @@ class ProductionConfig(Config):
     DEBUG = False
     
     # In production, you might want to use different paths
-    # Example: UPLOAD_FOLDER = '/var/www/pose-api/uploads'
+    # Example: STORAGE_BASE_DIR = '/var/www/pose-api/uploads'
     
 class TestingConfig(Config):
     """Testing configuration"""

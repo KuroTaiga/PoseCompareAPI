@@ -7,7 +7,7 @@ import numpy as np
 from scipy import signal
 from config import Config
 
-def apply_filter(video_path, , filter_name, filter_window):
+def apply_filter(video_path, pose_output, filter_name, filter_window):
     try:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -28,3 +28,5 @@ def apply_filter(video_path, , filter_name, filter_window):
                 b, a = signal.bessel(4, filter_window, 'low')
             case _:
                 raise ValueError(f"Unknown filter: {filter_name}")
+    except Exception as e:
+        raise ValueError(f"Error initializing video processing: {e}")

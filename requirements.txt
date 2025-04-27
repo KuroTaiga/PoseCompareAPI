@@ -20,6 +20,7 @@ pytest>=7.4.0  # for testing
 black>=23.0.0  # for code formatting
 flask>=2.3.4  # for web framework
 flask-cors>=3.0.10  # for CORS support in Flask
+Flask-Session >=0.8.0  # for session management in Flask
 Werkzeug>=2.3.4  # for Flask compatibility
 filterpy>=1.4.5  # for Kalman filtering
 pykrige>=1.7.0  # for Kriging interpolation
