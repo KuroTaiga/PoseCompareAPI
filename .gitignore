@@ -12,3 +12,6 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+/api/uploads
+*.mp4
+/storage

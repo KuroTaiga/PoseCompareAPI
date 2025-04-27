@@ -8,6 +8,17 @@ from pathlib import Path
 class FileManager:
     """
     Manages file organization for user sessions, uploads, and processed results
+    
+    Storage structure:
+    /storage/
+        /sessions/
+            /<session_id>/
+                metadata.json
+                /<upload_id>/
+                    original.mp4  # Original uploaded video
+                    mediapipe_butterworth.mp4  # Example processed output
+                    sapiens_2b_original.mp4  # Example processed output
+                    ... other processing results
     """
     
     def __init__(self, base_dir="storage"):
@@ -19,13 +30,9 @@ class FileManager:
         """
         self.base_dir = Path(base_dir)
         self.sessions_dir = self.base_dir / "sessions"
-        self.uploads_dir = self.base_dir / "uploads"
-        self.results_dir = self.base_dir / "results"
         
         # Create base directories if they don't exist
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
-        self.uploads_dir.mkdir(parents=True, exist_ok=True)
-        self.results_dir.mkdir(parents=True, exist_ok=True)
     
     def create_user_session(self):
         """
@@ -48,13 +55,6 @@ class FileManager:
         
         with open(session_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=2)
-        
-        # Create subdirectories for this session
-        user_upload_dir = self.uploads_dir / session_id
-        user_results_dir = self.results_dir / session_id
-        
-        user_upload_dir.mkdir(exist_ok=True)
-        user_results_dir.mkdir(exist_ok=True)
         
         print(f"Created new user session: {session_id}")
         return session_id
@@ -88,11 +88,12 @@ class FileManager:
         else:
             _, ext = os.path.splitext(file.filename)
         
-        # Create filename
-        filename = f"{upload_id}{ext}"
+        # Create upload directory within the session
+        upload_dir = session_dir / upload_id
+        upload_dir.mkdir(exist_ok=True)
         
-        # Save file to session's upload directory
-        upload_dir = self.uploads_dir / session_id
+        # Save file with a standardized name (original.ext)
+        filename = f"original{ext}"
         upload_path = upload_dir / filename
         
         # Clear previous uploads if requested
@@ -108,6 +109,7 @@ class FileManager:
                 "original_filename": original_filename or file.filename,
                 "filename": filename,
                 "path": str(upload_path),
+                "dir": str(upload_dir),
                 "uploaded_at": datetime.now().isoformat()
             })
             
@@ -118,6 +120,7 @@ class FileManager:
                 "upload_id": upload_id,
                 "filename": filename,
                 "path": str(upload_path),
+                "dir": str(upload_dir),
                 "original_filename": original_filename or file.filename
             }, None
         except Exception as e:
@@ -132,7 +135,7 @@ class FileManager:
         Args:
             session_id (str): Session ID
             upload_id (str): Upload ID
-            result_type (str): Type of result (e.g., 'pose', 'heatmap')
+            result_type (str): Type of result (e.g., 'mediapipe_butterworth')
             original_path (str): Path to the result file
             metadata (dict, optional): Additional metadata
             
@@ -147,18 +150,22 @@ class FileManager:
             print(f"Error: {error_msg}")
             return None, "Session expired. Please refresh the page."
         
+        # Validate upload directory
+        upload_dir = session_dir / upload_id
+        if not upload_dir.exists():
+            error_msg = f"Upload {upload_id} does not exist"
+            print(f"Error: {error_msg}")
+            return None, "Upload not found. Please try again."
+        
         # Create result ID
         result_id = str(uuid.uuid4())
         
         # Get file extension
         _, ext = os.path.splitext(original_path)
         
-        # Create filename
-        filename = f"{result_type}_{upload_id}_{result_id}{ext}"
-        
-        # Copy result to session's results directory
-        results_dir = self.results_dir / session_id
-        result_path = results_dir / filename
+        # Create result filename (e.g., mediapipe_butterworth.mp4)
+        filename = f"{result_type}{ext}"
+        result_path = upload_dir / filename
         
         try:
             shutil.copy2(original_path, result_path)
@@ -285,6 +292,81 @@ class FileManager:
         
         return None, "Upload not found"
     
+    def get_upload_directory(self, session_id, upload_id):
+        """
+        Get the directory path for a specific upload
+        
+        Args:
+            session_id (str): Session ID
+            upload_id (str): Upload ID
+            
+        Returns:
+            str: Path to the upload directory or None if not found
+            or tuple(None, str): None and error message if failed
+        """
+        session_data, error = self.get_session_details(session_id)
+        if not session_data:
+            return None, error or "Upload not found"
+        
+        for upload in session_data.get("uploads", []):
+            if upload.get("id") == upload_id:
+                return upload.get("dir"), None
+        
+        return None, "Upload not found"
+    
+    def get_all_files_for_upload(self, session_id, upload_id):
+        """
+        Get all files (original and processed) for a specific upload
+        
+        Args:
+            session_id (str): Session ID
+            upload_id (str): Upload ID
+            
+        Returns:
+            dict: Dictionary of files with type as key and path as value
+            or tuple(None, str): None and error message if failed
+        """
+        upload_dir, error = self.get_upload_directory(session_id, upload_id)
+        if not upload_dir:
+            return None, error
+        
+        # Get the directory as Path object
+        dir_path = Path(upload_dir)
+        if not dir_path.exists():
+            return None, "Upload directory not found"
+        
+        # Get all files in the directory
+        files = {}
+        for file_path in dir_path.glob("*"):
+            if file_path.is_file():
+                file_type = file_path.stem  # Use filename without extension as type
+                files[file_type] = str(file_path)
+        
+        return files, None
+    
+    def delete_session(self, session_id):
+        """
+        Delete a session and all its files
+        
+        Args:
+            session_id (str): Session ID
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        session_dir = self.sessions_dir / session_id
+        if not session_dir.exists():
+            print(f"Session {session_id} does not exist, nothing to delete")
+            return True
+        
+        try:
+            shutil.rmtree(session_dir)
+            print(f"Deleted session {session_id} and all its files")
+            return True
+        except Exception as e:
+            print(f"Error deleting session {session_id}: {str(e)}")
+            return False
+    
     def _update_session_metadata(self, session_id, key, value):
         """
         Update session metadata
@@ -335,28 +417,15 @@ class FileManager:
         # Get previous uploads
         previous_uploads = session_data.get("uploads", [])
         
-        # Get previous results
-        previous_results = session_data.get("results", [])
-        
-        # Delete previous upload files
+        # Delete previous upload directories
         for upload in previous_uploads:
-            upload_path = upload.get("path")
-            if upload_path and os.path.exists(upload_path):
+            upload_dir = upload.get("dir")
+            if upload_dir and os.path.exists(upload_dir):
                 try:
-                    os.remove(upload_path)
-                    print(f"Deleted previous upload: {upload_path}")
+                    shutil.rmtree(upload_dir)
+                    print(f"Deleted previous upload directory: {upload_dir}")
                 except Exception as e:
-                    print(f"Error deleting file {upload_path}: {str(e)}")
-        
-        # Delete previous result files
-        for result in previous_results:
-            result_path = result.get("path")
-            if result_path and os.path.exists(result_path):
-                try:
-                    os.remove(result_path)
-                    print(f"Deleted previous result: {result_path}")
-                except Exception as e:
-                    print(f"Error deleting file {result_path}: {str(e)}")
+                    print(f"Error deleting directory {upload_dir}: {str(e)}")
         
         # Reset session metadata for uploads and results
         metadata_file = self.sessions_dir / session_id / "metadata.json"
@@ -375,24 +444,47 @@ class FileManager:
             print(f"Error resetting session metadata: {str(e)}")
             return False
 
-    def get_latest_upload(self, session_id):
+    def cleanup_expired_sessions(self, max_age_hours=5):
         """
-        Get the most recent upload for a session
+        Clean up expired sessions
         
         Args:
-            session_id (str): Session ID
+            max_age_hours (int): Maximum age of sessions in hours
             
         Returns:
-            dict: Upload information or None if no uploads
-            or tuple(None, str): None and error message if failed
+            int: Number of sessions deleted
         """
-        session_data, error = self.get_session_details(session_id)
-        if not session_data:
-            return None, error or "No uploads found"
+        now = datetime.now()
+        deleted_count = 0
         
-        uploads = session_data.get("uploads", [])
-        if not uploads:
-            return None, "No uploads found"
+        # Iterate through all session directories
+        for session_dir in self.sessions_dir.iterdir():
+            if not session_dir.is_dir():
+                continue
+            
+            metadata_file = session_dir / "metadata.json"
+            if not metadata_file.exists():
+                # No metadata, just delete the directory
+                shutil.rmtree(session_dir)
+                deleted_count += 1
+                continue
+            
+            try:
+                with open(metadata_file, "r") as f:
+                    metadata = json.load(f)
+                
+                # Get creation time
+                created_at = datetime.fromisoformat(metadata.get("created_at", "2000-01-01T00:00:00"))
+                
+                # Calculate age in hours
+                age_hours = (now - created_at).total_seconds() / 3600
+                
+                # Delete if older than max age
+                if age_hours > max_age_hours:
+                    shutil.rmtree(session_dir)
+                    deleted_count += 1
+                    print(f"Deleted expired session {session_dir.name}, age: {age_hours:.1f} hours")
+            except Exception as e:
+                print(f"Error processing session {session_dir.name}: {str(e)}")
         
-        # Return the most recent upload (last in the list)
-        return uploads[-1], None
+        return deleted_count

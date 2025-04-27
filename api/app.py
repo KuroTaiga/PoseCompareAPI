@@ -2,14 +2,36 @@ from flask import Flask, jsonify, session, send_from_directory
 from flask_cors import CORS
 from flask_session import Session
 import os
+import threading
+import time
 from utils.file_manager import FileManager
 from config import config_by_name
 
 # Import routes
 from routes.upload import upload_bp
-# from routes.process import process_bp
-# from routes.jobs import jobs_bp
+from routes.process import process_bp
+from routes.jobs import jobs_bp
 # from routes.heatmap import heatmap_bp  # Skipped per request
+
+# Background thread for session cleanup
+def cleanup_task(app, interval_hours=1):
+    """Background thread to clean up expired sessions"""
+    with app.app_context():
+        while True:
+            try:
+                # Sleep first to avoid immediate cleanup on startup
+                time.sleep(interval_hours * 3600)  # Convert hours to seconds
+                
+                # Get max age from config
+                max_age_hours = app.config.get('PERMANENT_SESSION_LIFETIME', 5 * 3600) / 3600
+                
+                # Clean up expired sessions
+                file_manager = FileManager(app.config['STORAGE_BASE_DIR'])
+                deleted_count = file_manager.cleanup_expired_sessions(max_age_hours)
+                
+                print(f"Cleaned up {deleted_count} expired sessions (older than {max_age_hours:.1f} hours)")
+            except Exception as e:
+                print(f"Error in cleanup task: {str(e)}")
 
 def create_app(config_name='development'):
     """Create and configure the Flask application"""
@@ -43,9 +65,6 @@ def create_app(config_name='development'):
         # Create storage structure
         storage_base = app.config['STORAGE_BASE_DIR']
         os.makedirs(os.path.join(storage_base, 'sessions'), exist_ok=True)
-        os.makedirs(os.path.join(storage_base, 'uploads'), exist_ok=True)
-        os.makedirs(os.path.join(storage_base, 'results'), exist_ok=True)
-        os.makedirs(os.path.join(storage_base, 'temp'), exist_ok=True)
         
         # Create Flask session directory
         os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
@@ -54,10 +73,20 @@ def create_app(config_name='development'):
     except OSError as e:
         print(f"Error creating directories: {e}")
     
+    # Start session cleanup thread (only in production)
+    if config_name == 'production':
+        cleanup_thread = threading.Thread(
+            target=cleanup_task,
+            args=(app, 1),  # Run every 1 hour
+            daemon=True
+        )
+        cleanup_thread.start()
+        print("Started background session cleanup thread")
+    
     # Register blueprints
     app.register_blueprint(upload_bp)
-    # app.register_blueprint(process_bp)
-    # app.register_blueprint(jobs_bp)
+    app.register_blueprint(process_bp)
+    app.register_blueprint(jobs_bp)
     # app.register_blueprint(heatmap_bp)  # Skipped per request
     
     # Route to serve static index page
@@ -65,20 +94,32 @@ def create_app(config_name='development'):
     def index():
         return send_from_directory('static', 'index.html')
     
-    # Route to serve files from storage
-    @app.route('/storage/<path:filename>')
-    def serve_storage_file(filename):
-        # Check if the session ID in the path matches the current session
-        path_parts = filename.split('/')
-        if len(path_parts) >= 2:
-            path_session_id = path_parts[0]
-            if 'session_id' in session and path_session_id != session['session_id']:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'You do not have permission to access this file'
-                }), 403
+    # Route to serve files from storage/sessions directory
+    @app.route('/session-files/<session_id>/<path:filename>')
+    def serve_session_file(session_id, filename):
+        # Check if the session ID matches the current session
+        if 'session_id' in session and session_id != session['session_id']:
+            return jsonify({
+                'status': 'error',
+                'message': 'You do not have permission to access this file'
+            }), 403
         
-        return send_from_directory(app.config['STORAGE_BASE_DIR'], filename)
+        # Construct the full path within the sessions directory
+        session_dir = os.path.join(app.config['STORAGE_BASE_DIR'], 'sessions', session_id)
+        
+        # Security check to prevent directory traversal
+        requested_path = os.path.abspath(os.path.join(session_dir, filename))
+        if not requested_path.startswith(os.path.abspath(session_dir)):
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid file path'
+            }), 400
+        
+        # Get the directory part of the path
+        dir_path = os.path.dirname(requested_path)
+        file_name = os.path.basename(requested_path)
+        
+        return send_from_directory(dir_path, file_name)
     
     # API information endpoint
     @app.route('/api/info')
@@ -98,6 +139,7 @@ def create_app(config_name='development'):
                 'available_models': '/api/process/available-models',
                 'job_status': '/api/jobs/<job_id>',
                 'job_result': '/api/jobs/<job_id>/result',
+                'session_files': '/session-files/<session_id>/<filename>'
             }
         }
         
