@@ -2,9 +2,9 @@ import os
 import threading
 import uuid
 from flask import Blueprint, request, jsonify, current_app, session, url_for
-from processors.pose_processor import PoseProcessor
-from models.fdhumans_model import FourDHumanWrapper
-from models.sapiens_model import SapiensProcessor
+
+# from models.fdhumans_model import FourDHumanWrapper
+from models.sapiens.model import SapiensProcessor
 from utils.file_manager import FileManager
 
 # Create blueprint
@@ -14,181 +14,234 @@ process_bp = Blueprint('process', __name__, url_prefix='/api')
 # In a production app, use a database or Redis
 jobs = {}
 
-def process_video_task(job_id, session_id, upload_id, input_path, selected_models, noise_filter, filter_window, sample_rate):
+def process_video_task(app, job_id, session_id, upload_id, input_path, selected_models, noise_filter, filter_window, sample_rate):
     """Background task for video processing"""
-    try:
-        jobs[job_id]['status'] = 'processing'
-        
-        # Initialize file manager
-        file_manager = FileManager(current_app.config['STORAGE_BASE_DIR'])
-        
-        # Get upload directory
-        upload_dir, error = file_manager.get_upload_directory(session_id, upload_id)
-        if not upload_dir:
-            jobs[job_id]['status'] = 'failed'
-            jobs[job_id]['errors'].append(f"Error getting upload directory: {error}")
-            return
-        
-        # Process with each selected model
-        for model in selected_models:
-            try:
-                if model == 'mediapipe':
-                    # Create output paths directly in the upload directory
-                    output_video_path = os.path.join(upload_dir, f'mediapipe_{noise_filter}.mp4')
-                    output_json_path = os.path.join(upload_dir, f'mediapipe_{noise_filter}.json')
-                    
-                    # Initialize processor
-                    processor = PoseProcessor()
-                    
-                    # Process the video with JSON output
-                    processor.process_video(
-                        input_path, 
-                        method=noise_filter, 
-                        output_path=output_video_path,
-                        output_json_path=output_json_path,
-                        sample_rate=sample_rate
-                    )
-                    
-                    # Add to job results
-                    jobs[job_id]['results'][model] = {
-                        'video': output_video_path,
-                        'json': output_json_path
-                    }
-                    
-                    # Add to session metadata for video
-                    file_manager.save_result(
-                        session_id, 
-                        upload_id, 
-                        f'mediapipe_{noise_filter}', 
-                        output_video_path, 
-                        metadata={
-                            'model': 'mediapipe',
-                            'filter': noise_filter,
-                            'window': filter_window,
-                            'type': 'video'
-                        }
-                    )
-                    
-                    # Add to session metadata for JSON
-                    file_manager.save_result(
-                        session_id, 
-                        upload_id, 
-                        f'mediapipe_{noise_filter}_json', 
-                        output_json_path, 
-                        metadata={
-                            'model': 'mediapipe',
-                            'filter': noise_filter,
-                            'window': filter_window,
-                            'type': 'json'
-                        }
-                    )
-                    
-                    print(f"Processed {model} for job {job_id}, saved video to {output_video_path} and JSON to {output_json_path}")
-                
-                elif model == 'fourdhumans':
-                    # Create output paths directly in the upload directory
-                    output_video_path = os.path.join(upload_dir, f'fourdhumans_{noise_filter}.mp4')
-                    
-                    # Initialize model
-                    fdh_model = FourDHumanWrapper()
-                    
-                    # Process the video
-                    fdh_model.process_video(input_path, output_video_path, method=noise_filter)
-                    
-                    # Add to job results
-                    jobs[job_id]['results'][model] = {
-                        'video': output_video_path
-                    }
-                    
-                    # Add to session metadata
-                    file_manager.save_result(
-                        session_id, 
-                        upload_id, 
-                        f'fourdhumans_{noise_filter}', 
-                        output_video_path, 
-                        metadata={
-                            'model': 'fourdhumans',
-                            'filter': noise_filter,
-                            'type': 'video'
-                        }
-                    )
-                    
-                    print(f"Processed {model} for job {job_id}, saved to {output_video_path}")
-                
-                elif model.startswith('sapiens_'):
-                    # Create output paths directly in the upload directory
-                    output_video_path = os.path.join(upload_dir, f'{model}_{noise_filter}.mp4')
-                    output_json_path = os.path.join(upload_dir, f'{model}_{noise_filter}.json')
-                    
-                    # Get model path
-                    model_path = current_app.config['SAPIENS_MODELS'].get(model)
-                    if not model_path:
-                        raise ValueError(f"Model path not found for {model}")
-                    
-                    # Initialize model
-                    sapiens_processor = SapiensProcessor(model_path, save_img_flag=False)
-                    
-                    # Process the video
-                    sapiens_processor.process_video(
-                        input_path, 
-                        output_video_path, 
-                        method=noise_filter,
-                        filter_window=filter_window,
-                        save_keypoints=True,
-                        keypoints_path=output_json_path,
-                        sample_rate=sample_rate
-                    )
-                    
-                    # Add to job results
-                    jobs[job_id]['results'][model] = {
-                        'video': output_video_path,
-                        'json': output_json_path if os.path.exists(output_json_path) else None
-                    }
-                    
-                    # Add to session metadata for video
-                    file_manager.save_result(
-                        session_id, 
-                        upload_id, 
-                        f'{model}_{noise_filter}', 
-                        output_video_path, 
-                        metadata={
-                            'model': model,
-                            'filter': noise_filter,
-                            'window': filter_window,
-                            'type': 'video'
-                        }
-                    )
-                    
-                    # Add to session metadata for JSON if it exists
-                    if os.path.exists(output_json_path):
-                        file_manager.save_result(
-                            session_id, 
-                            upload_id, 
-                            f'{model}_{noise_filter}_json', 
-                            output_json_path, 
-                            metadata={
-                                'model': model,
-                                'filter': noise_filter,
-                                'window': filter_window,
-                                'type': 'json'
-                            }
+    with app.app_context():
+        try:
+            jobs[job_id]['status'] = 'processing'
+            #debug
+            print(f"process video task started for job {job_id}")
+            # Initialize file manager
+            file_manager = FileManager(current_app.config['STORAGE_BASE_DIR'])
+            
+            # Get upload directory
+            upload_dir, error = file_manager.get_upload_directory(session_id, upload_id)
+            if not upload_dir:
+                jobs[job_id]['status'] = 'failed'
+                jobs[job_id]['errors'].append(f"Error getting upload directory: {error}")
+                return
+            
+            # Process with each selected model
+            for model in selected_models:
+                try:
+                    if model == 'mediapipe':
+                        # Create output paths directly in the upload directory
+                        output_video_path = os.path.join(upload_dir, f'mediapipe_{noise_filter}.mp4')
+                        output_json_path = os.path.join(upload_dir, f'mediapipe_{noise_filter}.json')
+                        
+                        # Initialize processor
+                        from models.mediapipe_model import MediaPipeProcessor
+                        processor = MediaPipeProcessor()
+                        
+                        # Process the video
+                        result = processor.process_video(
+                            input_path, 
+                            output_video_path,
+                            method=noise_filter, 
+                            filter_window=filter_window,
+                            output_json_path=output_json_path,
+                            sample_rate=sample_rate
                         )
+                        
+                        if result:
+                            # Add to job results
+                            jobs[job_id]['results'][model] = {
+                                'video': output_video_path,
+                                'json': output_json_path
+                            }
+                            
+                            # Add to session metadata for video
+                            file_manager.save_result(
+                                session_id, 
+                                upload_id, 
+                                f'mediapipe_{noise_filter}', 
+                                output_video_path, 
+                                metadata={
+                                    'model': 'mediapipe',
+                                    'filter': noise_filter,
+                                    'window': filter_window,
+                                    'type': 'video'
+                                }
+                            )
+                            
+                            # Add to session metadata for JSON
+                            file_manager.save_result(
+                                session_id, 
+                                upload_id, 
+                                f'mediapipe_{noise_filter}_json', 
+                                output_json_path, 
+                                metadata={
+                                    'model': 'mediapipe',
+                                    'filter': noise_filter,
+                                    'window': filter_window,
+                                    'type': 'json'
+                                }
+                            )
+                            
+                            print(f"Processed {model} for job {job_id}, saved video to {output_video_path} and JSON to {output_json_path}")
+                        else:
+                            error_msg = f"Failed to process video with {model} model"
+                            print(error_msg)
+                            jobs[job_id]['errors'].append(error_msg)
                     
-                    print(f"Processed {model} for job {job_id}, saved video to {output_video_path}")
-                
-            except Exception as e:
-                print(f"Error processing {model} for job {job_id}: {str(e)}")
-                jobs[job_id]['errors'].append(f"Error processing {model}: {str(e)}")
+                    # elif model == 'fourdhumans':
+                    #     # Create output paths directly in the upload directory
+                    #     output_video_path = os.path.join(upload_dir, f'fourdhumans_{noise_filter}.mp4')
+                    #     output_json_path = os.path.join(upload_dir, f'fourdhumans_{noise_filter}.json')
+                        
+                    #     # Initialize model
+                    #     from models.fdhumans_model import FourDHumanWrapper
+                    #     fdh_model = FourDHumanWrapper()
+                        
+                    #     # Process the video
+                    #     success = fdh_model.process_video(
+                    #         input_path, 
+                    #         output_video_path, 
+                    #         method=noise_filter,
+                    #         filter_window=filter_window,
+                    #         output_json_path=output_json_path
+                    #     )
+                        
+                    #     if success:
+                    #         # Add to job results
+                    #         result_files = {
+                    #             'video': output_video_path
+                    #         }
+                            
+                    #         # Add JSON if it exists
+                    #         if os.path.exists(output_json_path):
+                    #             result_files['json'] = output_json_path
+                            
+                    #         jobs[job_id]['results'][model] = result_files
+                            
+                    #         # Add to session metadata for video
+                    #         file_manager.save_result(
+                    #             session_id, 
+                    #             upload_id, 
+                    #             f'fourdhumans_{noise_filter}', 
+                    #             output_video_path, 
+                    #             metadata={
+                    #                 'model': 'fourdhumans',
+                    #                 'filter': noise_filter,
+                    #                 'window': filter_window,
+                    #                 'type': 'video'
+                    #             }
+                    #         )
+                            
+                    #         # Add to session metadata for JSON if it exists
+                    #         if os.path.exists(output_json_path):
+                    #             file_manager.save_result(
+                    #                 session_id, 
+                    #                 upload_id, 
+                    #                 f'fourdhumans_{noise_filter}_json', 
+                    #                 output_json_path, 
+                    #                 metadata={
+                    #                     'model': 'fourdhumans',
+                    #                     'filter': noise_filter,
+                    #                     'window': filter_window,
+                    #                     'type': 'json'
+                    #                 }
+                    #             )
+                            
+                    #         print(f"Processed {model} for job {job_id}, saved to {output_video_path}")
+                    #     else:
+                    #         error_msg = f"Failed to process video with {model} model"
+                    #         print(error_msg)
+                    #         jobs[job_id]['errors'].append(error_msg)
+                    
+                    elif model.startswith('sapiens_'):
+                        # Create output paths directly in the upload directory
+                        output_video_path = os.path.join(upload_dir, f'{model}_{noise_filter}.mp4')
+                        output_json_path = os.path.join(upload_dir, f'{model}_{noise_filter}.json')
+                        
+                        # Get model path
+                        model_path = current_app.config['SAPIENS_MODELS'].get(model)
+                        if not model_path:
+                            error_msg = f"Model path not found for {model}"
+                            print(error_msg)
+                            jobs[job_id]['errors'].append(error_msg)
+                            continue
+                        
+                        # Initialize model
+                        from models.sapiens import SapiensProcessor
+                        sapiens_processor = SapiensProcessor(model_path, save_img_flag=False)
+                        
+                        # Process the video
+                        success = sapiens_processor.process_video(
+                            input_path, 
+                            output_video_path, 
+                            method=noise_filter,
+                            filter_window=filter_window,
+                            output_json_path=output_json_path,
+                            save_keypoints=True,
+                            sample_rate=sample_rate
+                        )
+                        
+                        if success:
+                            # Add to job results
+                            jobs[job_id]['results'][model] = {
+                                'video': output_video_path,
+                                'json': output_json_path if os.path.exists(output_json_path) else None
+                            }
+                            
+                            # Add to session metadata for video
+                            file_manager.save_result(
+                                session_id, 
+                                upload_id, 
+                                f'{model}_{noise_filter}', 
+                                output_video_path, 
+                                metadata={
+                                    'model': model,
+                                    'filter': noise_filter,
+                                    'window': filter_window,
+                                    'type': 'video'
+                                }
+                            )
+                            
+                            # Add to session metadata for JSON if it exists
+                            if os.path.exists(output_json_path):
+                                file_manager.save_result(
+                                    session_id, 
+                                    upload_id, 
+                                    f'{model}_{noise_filter}_json', 
+                                    output_json_path, 
+                                    metadata={
+                                        'model': model,
+                                        'filter': noise_filter,
+                                        'window': filter_window,
+                                        'type': 'json'
+                                    }
+                                )
+                            
+                            print(f"Processed {model} for job {job_id}, saved video to {output_video_path}")
+                        else:
+                            error_msg = f"Failed to process video with {model} model"
+                            print(error_msg)
+                            jobs[job_id]['errors'].append(error_msg)
+                    
+                except Exception as e:
+                    print(f"Error processing {model} for job {job_id}: {str(e)}")
+                    jobs[job_id]['errors'].append(f"Error processing {model}: {str(e)}")
+            
+            # Update job status
+            jobs[job_id]['status'] = 'completed'
+            
+            print(f"Job {job_id} completed successfully")
         
-        # Update job status
-        jobs[job_id]['status'] = 'completed'
-        
-        print(f"Job {job_id} completed successfully")
-    
-    except Exception as e:
-        print(f"Error in job {job_id}: {str(e)}")
-        jobs[job_id]['status'] = 'failed'
-        jobs[job_id]['errors'].append(str(e))
+        except Exception as e:
+            print(f"Error in job {job_id}: {str(e)}")
+            jobs[job_id]['status'] = 'failed'
+            jobs[job_id]['errors'].append(str(e))
 
 @process_bp.route('/process', methods=['POST'])
 def process_video():
@@ -290,11 +343,12 @@ def process_video():
         'results': {},
         'errors': []
     }
-    
+    # get current app
+    app = current_app._get_current_object()
     # Start processing in background
     thread = threading.Thread(
         target=process_video_task,
-        args=(job_id, session_id, upload_id, input_path, selected_models, noise_filter, filter_window, sample_rate)
+        args=(app, job_id, session_id, upload_id, input_path, selected_models, noise_filter, filter_window, sample_rate)
     )
     thread.daemon = True
     thread.start()

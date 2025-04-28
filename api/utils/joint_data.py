@@ -1,3 +1,11 @@
+"""
+Joint data utilities for pose estimation models
+
+This module provides utilities for working with joint position data
+from various pose estimation models, including format conversions,
+filtering, and saving to standard formats.
+"""
+
 import json
 import numpy as np
 import os
@@ -34,6 +42,27 @@ COCO_BODY_PARTS = {
     "left_leg": [11, 13, 15],
     "right_leg": [12, 14, 16],
     "torso": [5, 6, 11, 12]
+}
+
+# MediaPipe pose landmark indices mapping to COCO-17 keypoints
+MEDIAPIPE_TO_COCO = {
+    0: 0,    # nose
+    2: 1,    # left_eye
+    5: 2,    # right_eye
+    7: 3,    # left_ear
+    8: 4,    # right_ear
+    11: 5,   # left_shoulder
+    12: 6,   # right_shoulder
+    13: 7,   # left_elbow
+    14: 8,   # right_elbow
+    15: 9,   # left_wrist
+    16: 10,  # right_wrist
+    23: 11,  # left_hip
+    24: 12,  # right_hip
+    25: 13,  # left_knee
+    26: 14,  # right_knee
+    27: 15,  # left_ankle
+    28: 16   # right_ankle
 }
 
 class JointDataProcessor:
@@ -73,29 +102,37 @@ class JointDataProcessor:
                 "frames": []
             }
             
-            # Add keypoint data for each frame, applying sampling rate
-            for i in range(0, len(frame_indices), sample_rate):
-                frame_idx = frame_indices[i]
-                frame_keypoints = keypoints[i]
-                
-                # Format each keypoint as a dictionary
-                formatted_keypoints = []
-                for j, kp in enumerate(frame_keypoints):
-                    formatted_keypoints.append({
-                        "name": COCO_KEYPOINT_NAMES[j] if j < len(COCO_KEYPOINT_NAMES) else f"keypoint_{j}",
-                        "position": {
-                            "x": float(kp[0]),
-                            "y": float(kp[1]),
-                            "z": float(kp[2]) if len(kp) > 2 else 0.0
-                        },
-                        "confidence": float(kp[3]) if len(kp) > 3 else 1.0
+            # Add keypoint data for each frame
+            for i in range(len(frame_indices)):
+                if i < len(keypoints):
+                    frame_idx = frame_indices[i]
+                    frame_keypoints = keypoints[i]
+                    
+                    # Format each keypoint as a dictionary
+                    formatted_keypoints = []
+                    for j, kp in enumerate(frame_keypoints):
+                        # Handle both numpy arrays and lists
+                        if isinstance(kp, np.ndarray):
+                            kp = kp.tolist()
+                            
+                        formatted_keypoints.append({
+                            "name": COCO_KEYPOINT_NAMES[j] if j < len(COCO_KEYPOINT_NAMES) else f"keypoint_{j}",
+                            "position": {
+                                "x": float(kp[0]),
+                                "y": float(kp[1]),
+                                "z": float(kp[2]) if len(kp) > 2 else 0.0
+                            },
+                            "confidence": float(kp[3]) if len(kp) > 3 else 1.0
+                        })
+                    
+                    # Add frame data
+                    data["frames"].append({
+                        "index": int(frame_idx),
+                        "keypoints": formatted_keypoints
                     })
-                
-                # Add frame data
-                data["frames"].append({
-                    "index": int(frame_idx),
-                    "keypoints": formatted_keypoints
-                })
+            
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
             # Save to file
             with open(output_path, 'w') as f:
@@ -135,12 +172,14 @@ class JointDataProcessor:
             if len(keypoints_array) < filter_window:
                 return keypoints
             
-            # Create an instance of PoseProcessor to use its filtering methods
-            from processors.pose_processor import PoseProcessor
-            processor = PoseProcessor()
-            
-            # Apply the selected filter method
-            filtered_keypoints = processor.apply_method(keypoints_array, filter_method)
+            # Apply filtering using the PoseFilter class
+            from processors.noise_filters import PoseFilter
+            filtered_keypoints = PoseFilter.apply_filter(
+                keypoints_array, 
+                filter_method, 
+                filter_window,
+                **filter_params
+            )
             
             # Convert back to list and return
             return filtered_keypoints.tolist()
@@ -170,31 +209,10 @@ class JointDataProcessor:
         """
         try:
             if source_type == 'mediapipe':
-                # MediaPipe provides 33 keypoints, we need to map to COCO-17
-                # MediaPipe keypoint mapping to COCO-17
-                mediapipe_to_coco = {
-                    0: 0,    # nose
-                    2: 1,    # left_eye
-                    5: 2,    # right_eye
-                    7: 3,    # left_ear
-                    8: 4,    # right_ear
-                    11: 5,   # left_shoulder
-                    12: 6,   # right_shoulder
-                    13: 7,   # left_elbow
-                    14: 8,   # right_elbow
-                    15: 9,   # left_wrist
-                    16: 10,  # right_wrist
-                    23: 11,  # left_hip
-                    24: 12,  # right_hip
-                    25: 13,  # left_knee
-                    26: 14,  # right_knee
-                    27: 15,  # left_ankle
-                    28: 16   # right_ankle
-                }
-                
+                # MediaPipe provides 33 keypoints, we map to COCO-17
                 coco_keypoints = []
                 for coco_idx in range(17):
-                    mp_idx = next((k for k, v in mediapipe_to_coco.items() if v == coco_idx), None)
+                    mp_idx = next((k for k, v in MEDIAPIPE_TO_COCO.items() if v == coco_idx), None)
                     if mp_idx is not None and mp_idx < len(landmarks.landmark):
                         lm = landmarks.landmark[mp_idx]
                         # Convert normalized coordinates to pixel values
@@ -210,8 +228,7 @@ class JointDataProcessor:
                 return coco_keypoints
                 
             elif source_type == 'sapiens':
-                # Sapiens already outputs in COCO format, but we need to ensure dimensions
-                # This is a placeholder - adapt based on actual Sapiens output format
+                # Sapiens already outputs in COCO format, but we need to ensure correct dimensions
                 coco_keypoints = []
                 for i in range(17):
                     if i < len(landmarks):
@@ -226,6 +243,12 @@ class JointDataProcessor:
                         
                 return coco_keypoints
                 
+            elif source_type == '4dhumans':
+                # Convert 4DHumans format to COCO-17
+                # This is a placeholder - implement based on actual 4DHumans output format
+                coco_keypoints = [[0, 0, 0, 0] for _ in range(17)]
+                return coco_keypoints
+                
             else:
                 print(f"Unsupported landmark source type: {source_type}")
                 return [[0, 0, 0, 0] for _ in range(17)]  # Return empty keypoints
@@ -233,3 +256,108 @@ class JointDataProcessor:
         except Exception as e:
             print(f"Error extracting COCO keypoints: {str(e)}")
             return [[0, 0, 0, 0] for _ in range(17)]  # Return empty keypoints on error
+    
+    @staticmethod
+    def load_keypoints_from_json(json_path: str) -> Tuple[List[List[List[float]]], List[int], Dict[str, Any]]:
+        """
+        Load keypoint data from a JSON file
+        
+        Args:
+            json_path: Path to the JSON file
+            
+        Returns:
+            Tuple containing:
+            - List of keypoints for each frame [frames, keypoints, coords]
+            - List of frame indices
+            - Dictionary of metadata
+        """
+        try:
+            with open(json_path, 'r') as f:
+                data = json.load(f)
+            
+            keypoints = []
+            frame_indices = []
+            
+            for frame in data.get('frames', []):
+                frame_idx = frame['index']
+                frame_keypoints = []
+                
+                for kp in frame['keypoints']:
+                    pos = kp['position']
+                    conf = kp.get('confidence', 1.0)
+                    frame_keypoints.append([
+                        pos['x'],
+                        pos['y'],
+                        pos.get('z', 0.0),
+                        conf
+                    ])
+                
+                keypoints.append(frame_keypoints)
+                frame_indices.append(frame_idx)
+            
+            return keypoints, frame_indices, data.get('metadata', {})
+            
+        except Exception as e:
+            print(f"Error loading keypoint data: {str(e)}")
+            return [], [], {}
+    
+    @staticmethod
+    def calculate_joint_angles(keypoints: List[List[float]]) -> Dict[str, float]:
+        """
+        Calculate joint angles from a single frame of keypoints
+        
+        Args:
+            keypoints: List of keypoints in a single frame [keypoints, coords]
+            
+        Returns:
+            Dictionary of joint angles in degrees
+        """
+        try:
+            # Define joint triplets for angle calculation
+            angle_definitions = {
+                "left_elbow": [5, 7, 9],    # left_shoulder, left_elbow, left_wrist
+                "right_elbow": [6, 8, 10],  # right_shoulder, right_elbow, right_wrist
+                "left_shoulder": [11, 5, 7], # left_hip, left_shoulder, left_elbow
+                "right_shoulder": [12, 6, 8], # right_hip, right_shoulder, right_elbow
+                "left_knee": [11, 13, 15],  # left_hip, left_knee, left_ankle
+                "right_knee": [12, 14, 16], # right_hip, right_knee, right_ankle
+                "left_hip": [5, 11, 13],    # left_shoulder, left_hip, left_knee
+                "right_hip": [6, 12, 14]    # right_shoulder, right_hip, right_knee
+            }
+            
+            angles = {}
+            
+            for joint_name, (a_idx, b_idx, c_idx) in angle_definitions.items():
+                # Get the three points forming the angle
+                if a_idx < len(keypoints) and b_idx < len(keypoints) and c_idx < len(keypoints):
+                    a = np.array(keypoints[a_idx][:2])  # Use only x,y coords
+                    b = np.array(keypoints[b_idx][:2])
+                    c = np.array(keypoints[c_idx][:2])
+                    
+                    # Calculate vectors
+                    ba = a - b
+                    bc = c - b
+                    
+                    # Calculate dot product and magnitudes
+                    dot_product = np.dot(ba, bc)
+                    magnitude_ba = np.linalg.norm(ba)
+                    magnitude_bc = np.linalg.norm(bc)
+                    
+                    # Calculate angle in degrees
+                    if magnitude_ba > 0 and magnitude_bc > 0:
+                        cosine_angle = dot_product / (magnitude_ba * magnitude_bc)
+                        # Clamp cosine value to prevent domain errors
+                        cosine_angle = max(min(cosine_angle, 1.0), -1.0)
+                        angle_rad = np.arccos(cosine_angle)
+                        angle_deg = np.degrees(angle_rad)
+                        angles[joint_name] = float(angle_deg)
+                    else:
+                        angles[joint_name] = 0.0
+                else:
+                    angles[joint_name] = 0.0
+            
+            return angles
+            
+        except Exception as e:
+            print(f"Error calculating joint angles: {str(e)}")
+            return {}

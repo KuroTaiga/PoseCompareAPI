@@ -1,12 +1,21 @@
+"""
+4DHumans pose estimation model processor
+
+This module provides the FourDHumanWrapper class for processing videos
+with the 4DHumans pose estimation model, using shared components for
+filtering and visualization.
+"""
+
 import cv2
 import torch
 import numpy as np
-from scipy import signal
 import logging
 import os
 from FDHumans.hmr2.models import load_hmr2, DEFAULT_CHECKPOINT
 from FDHumans.hmr2.utils import recursive_to
 from FDHumans.hmr2.utils.renderer import Renderer
+from processors.noise_filters import PoseFilter
+from utils.joint_data import JointDataProcessor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -15,6 +24,13 @@ logger = logging.getLogger(__name__)
 class FourDHumanWrapper:
     """Wrapper for 4DHuman model."""
     def __init__(self, checkpoint_path=None, device=None):
+        """
+        Initialize 4DHuman model
+        
+        Args:
+            checkpoint_path: Path to model checkpoint (defaults to DEFAULT_CHECKPOINT)
+            device: Device to run model on ('cuda' or 'cpu')
+        """
         self.LIGHT_BLUE = (0.65098039, 0.74117647, 0.85882353)
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.checkpoint_path = checkpoint_path or DEFAULT_CHECKPOINT
@@ -30,6 +46,15 @@ class FourDHumanWrapper:
             raise
 
     def preprocess_frame(self, frame):
+        """
+        Preprocess a single frame for the model
+        
+        Args:
+            frame: Input frame
+            
+        Returns:
+            Preprocessed frame tensor
+        """
         try:
             frame_resized = cv2.resize(frame, (256, 256))
             frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB) / 255.0
@@ -39,7 +64,18 @@ class FourDHumanWrapper:
             logger.error(f"Error preprocessing frame: {e}", exc_info=True)
             return None
 
-    def process_frame(self, frame, show_background=True, noise_filter='None'):
+    def process_frame(self, frame, show_background=True, noise_filter='original'):
+        """
+        Process a single frame with the 4DHuman model
+        
+        Args:
+            frame: Input frame
+            show_background: Whether to show the background in the output
+            noise_filter: Filter to apply ('original', 'butterworth', etc.)
+            
+        Returns:
+            Processed frame with mesh overlay
+        """
         try:
             display_frame = frame.copy() if show_background else np.zeros(frame.shape, dtype=np.uint8)
             
@@ -57,58 +93,36 @@ class FourDHumanWrapper:
                     display_frame = self.render_mesh(display_frame, vertices, camera_params)
                     
                     # Apply noise filter if specified
-                    if noise_filter == 'butterworth':
-                        display_frame = self._apply_butterworth(display_frame)
-                    elif noise_filter == 'chebyshev':
-                        display_frame = self._apply_chebyshev(display_frame)
-                    elif noise_filter == 'bessel':
-                        display_frame = self._apply_bessel(display_frame)
+                    if noise_filter != 'original':
+                        # Convert the frame to a format suitable for filtering
+                        frame_data = np.array([[display_frame]])
+                        
+                        # Apply the filter
+                        filtered_data = PoseFilter.apply_filter(frame_data, noise_filter)
+                        
+                        # Extract the filtered frame
+                        display_frame = filtered_data[0, 0]
+                        
+                        # Ensure the frame is in the correct format
+                        display_frame = np.clip(display_frame, 0, 255).astype(np.uint8)
                         
             return display_frame
         except Exception as e:
             logger.error(f"Error processing frame with 4DHuman model: {e}", exc_info=True)
             return frame
 
-    def _apply_chebyshev(self, frame, order=4, ripple_db=1.0, cutoff=0.1):
-        try:
-            b, a = signal.cheby1(order, ripple_db, cutoff, 'low')
-            smoothed_frame = np.zeros_like(frame, dtype=np.float32)
-            for i in range(frame.shape[2]):  # Iterate over RGB channels
-                smoothed_frame[:, :, i] = signal.filtfilt(b, a, frame[:, :, i].astype(np.float32), axis=0)
-            # Clip values back to valid range for image data
-            smoothed_frame = np.clip(smoothed_frame, 0, 255).astype(np.uint8)
-            return smoothed_frame
-        except Exception as e:
-            logger.error(f"Error applying chebyshev filter: {e}")
-            return frame
-
-    def _apply_bessel(self, frame, order=4, cutoff=0.1):
-        try:
-            b, a = signal.bessel(order, cutoff, 'low')
-            smoothed_frame = np.zeros_like(frame, dtype=np.float32)
-            for i in range(frame.shape[2]):  # Iterate over RGB channels
-                smoothed_frame[:, :, i] = signal.filtfilt(b, a, frame[:, :, i].astype(np.float32), axis=0)
-            # Clip values back to valid range for image data
-            smoothed_frame = np.clip(smoothed_frame, 0, 255).astype(np.uint8)
-            return smoothed_frame
-        except Exception as e:
-            logger.error(f"Error applying bessel filter: {e}")
-            return frame
-
-    def _apply_butterworth(self, frame, order=4, cutoff=0.1):
-        try:
-            b, a = signal.butter(order, cutoff, 'low')
-            smoothed_frame = np.zeros_like(frame, dtype=np.float32)
-            for i in range(frame.shape[2]):  # Iterate over RGB channels
-                smoothed_frame[:, :, i] = signal.filtfilt(b, a, frame[:, :, i].astype(np.float32), axis=0)
-            # Clip values back to valid range for image data
-            smoothed_frame = np.clip(smoothed_frame, 0, 255).astype(np.uint8)
-            return smoothed_frame
-        except Exception as e:
-            logger.error(f"Error applying butterworth filter: {e}")
-            return frame
-
     def render_mesh(self, frame, vertices, camera_params):
+        """
+        Render 3D mesh on a frame
+        
+        Args:
+            frame: Input frame
+            vertices: 3D vertices from model output
+            camera_params: Camera parameters
+            
+        Returns:
+            Frame with mesh overlay
+        """
         try:
             s, tx, ty = camera_params
             img_h, img_w = frame.shape[:2]
@@ -126,36 +140,88 @@ class FourDHumanWrapper:
             logger.error(f"Error rendering mesh: {e}", exc_info=True)
             return frame
 
-    def process_video(self, video_path, output_path, method='original', show_background=True):
+    def process_video(self, input_path, output_path, method='original', 
+                      filter_window=5, output_json_path=None,
+                      show_background=True, max_frames=300):
+        """
+        Process a video with the 4DHuman model
+        
+        Args:
+            input_path: Path to input video
+            output_path: Path to save output video
+            method: Filter method to apply
+            filter_window: Window size for filter (if applicable)
+            output_json_path: Path to save keypoint data (optional)
+            show_background: Whether to show the background
+            max_frames: Maximum number of frames to process
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
         try:
-            cap = cv2.VideoCapture(video_path)
+            cap = cv2.VideoCapture(input_path)
             if not cap.isOpened():
-                raise ValueError(f"Failed to open video file: {video_path}")
+                raise ValueError(f"Failed to open video file: {input_path}")
                 
             frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             fps = cap.get(cv2.CAP_PROP_FPS)
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             video_writer = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
             
-            frame_count = 0 
-            max_frames = 300  # Limit processing to 300 frames
+            frame_count = 0
+            max_frames = min(max_frames, total_frames)
+            
+            # For keypoint extraction (if JSON output is requested)
+            all_keypoints = []
+            frame_indices = []
 
             # Process frames
+            logger.info(f"Processing video with 4DHuman model ({method})")
             while cap.isOpened() and frame_count < max_frames:
                 ret, frame = cap.read()
                 if not ret:
                     break
                     
                 frame_count += 1
-                logger.info(f"Processing frame {frame_count}")
+                logger.info(f"Processing frame {frame_count}/{max_frames}")
 
+                # Process the frame
                 processed_frame = self.process_frame(frame, show_background, method)
                 video_writer.write(processed_frame)
                 
+                # Extract keypoints for JSON output if requested
+                if output_json_path:
+                    # This is a placeholder - actual keypoint extraction would depend
+                    # on how 4DHuman represents keypoints
+                    # For now, we'll just add empty keypoints
+                    all_keypoints.append([[0, 0, 0, 0] for _ in range(17)])  # COCO format
+                    frame_indices.append(frame_count)
+            
             cap.release()
             video_writer.release()
+            
+            # Save keypoints to JSON if requested
+            if output_json_path and all_keypoints:
+                metadata = {
+                    "model": "4dhumans",
+                    "method": method,
+                    "filter_window": filter_window,
+                    "video_path": input_path,
+                    "frame_width": frame_width,
+                    "frame_height": frame_height,
+                    "fps": fps,
+                    "total_frames": total_frames
+                }
+                
+                JointDataProcessor.save_keypoints_to_json(
+                    all_keypoints,
+                    frame_indices,
+                    output_json_path,
+                    metadata=metadata
+                )
             
             logger.info(f"Video processing complete. Output saved to {output_path}")
             return True
