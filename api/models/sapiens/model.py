@@ -306,6 +306,7 @@ class SapiensProcessor:
                             
                             # Convert keypoints to image coordinates
                             kpts = (kpts / input_shape[1:]) * scale + centre - 0.5 * scale
+
                             
                             # Format as COCO keypoints with confidence
                             coco_kpts = []
@@ -532,9 +533,30 @@ class SapiensProcessor:
         out.release()
         print(f"Video saved to {output_path}")
 
+# def preprocess_pose_worker(orig_img, bboxes_list, input_shape, mean, std):
+#     """Preprocess pose images and bboxes."""
+#     from .util import top_down_affine_transform
+#     import torch
+#     import numpy as np
+#     import cv2
+
+#     preprocessed_images = []
+#     centers = []
+#     scales = []
+#     for bbox in bboxes_list:
+#         img, center, scale = top_down_affine_transform(orig_img.copy(), bbox)
+#         img = cv2.resize(img, (input_shape[1], input_shape[0]), interpolation=cv2.INTER_LINEAR).transpose(2, 0, 1)
+#         img = torch.from_numpy(img)
+#         img = img[[2, 1, 0], ...].float()
+#         mean = torch.Tensor(mean).view(-1, 1, 1)
+#         std = torch.Tensor(std).view(-1, 1, 1)
+#         img = (img - mean) / std
+#         preprocessed_images.append(img)
+#         centers.extend(center)
+#         scales.extend(scale)
+#     return preprocessed_images, centers, scales
 def preprocess_pose_worker(orig_img, bboxes_list, input_shape, mean, std):
-    """Preprocess pose images and bboxes."""
-    from .util import top_down_affine_transform
+    """Preprocess pose images using fixed center and scale."""
     import torch
     import numpy as np
     import cv2
@@ -542,18 +564,26 @@ def preprocess_pose_worker(orig_img, bboxes_list, input_shape, mean, std):
     preprocessed_images = []
     centers = []
     scales = []
-    for bbox in bboxes_list:
-        img, center, scale = top_down_affine_transform(orig_img.copy(), bbox)
-        img = cv2.resize(img, (input_shape[1], input_shape[0]), interpolation=cv2.INTER_LINEAR).transpose(2, 0, 1)
+    
+    # Force center and scale to be consistent for all frames
+    H, W, _ = orig_img.shape
+    center = np.array([W / 2, H / 2])
+    scale = max(H, W) * 1.0  # scale matches full frame
+    
+    for _ in bboxes_list:
+        # Crop center with identity transform (no actual cropping)
+        img = cv2.resize(orig_img.copy(), (input_shape[1], input_shape[0]), interpolation=cv2.INTER_LINEAR)
+        img = img.transpose(2, 0, 1)
         img = torch.from_numpy(img)
         img = img[[2, 1, 0], ...].float()
         mean = torch.Tensor(mean).view(-1, 1, 1)
         std = torch.Tensor(std).view(-1, 1, 1)
         img = (img - mean) / std
         preprocessed_images.append(img)
-        centers.extend(center)
-        scales.extend(scale)
+        centers.append(center)
+        scales.append(scale)
     return preprocessed_images, centers, scales
+
 
 
 def img_save_and_vis_worker(img, results, output_path, input_shape, heatmap_scale, kpt_colors, kpt_thr, radius, skeleton_info, thickness):
