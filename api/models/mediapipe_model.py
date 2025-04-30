@@ -32,7 +32,7 @@ class MediaPipeProcessor:
     
     def process_video(self, input_path, output_path, method='original', 
                       filter_window=5, output_json_path=None, sample_rate=1,
-                      max_frames=1000, radius=4, thickness=2):
+                      max_frames=10000, radius=4, thickness=2):
         """
         Process a video with MediaPipe pose model
         

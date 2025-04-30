@@ -17,3 +17,4 @@ build/
 /storage
 *.pth
 *.pt2
+static/

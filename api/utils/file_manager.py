@@ -4,7 +4,7 @@ import uuid
 import json
 from datetime import datetime
 from pathlib import Path
-
+import subprocess
 class FileManager:
     """
     Manages file organization for user sessions, uploads, and processed results
@@ -127,8 +127,21 @@ class FileManager:
             error_msg = f"Failed to save upload: {str(e)}"
             print(f"Error: {error_msg}")
             return None, "Failed to save your upload. Please try again."
-    
+        
+    def _is_playable_mp4(self, file_path):
+        try:
+            result = subprocess.run([
+                'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                '-show_entries', 'stream=codec_name', '-of', 'default=noprint_wrappers=1:nokey=1',
+                str(file_path)
+            ], capture_output=True, text=True, check=True)
+            return 'h264' in result.stdout.lower()
+        except Exception as e:
+            print(f"FFprobe check failed: {e}")
+            return False
+
     def save_result(self, session_id, upload_id, result_type, original_path, metadata=None):
+        print("File manager for save result")
         """
         Save a result file for a specific upload
         
@@ -162,14 +175,34 @@ class FileManager:
         
         # Get file extension
         _, ext = os.path.splitext(original_path)
+        is_video = ext.lower() in ['.mp4', '.avi', '.mov', '.webm', '.mkv']
         
         # Create result filename (e.g., mediapipe_butterworth.mp4)
         filename = f"{result_type}{ext}"
         result_path = upload_dir / filename
         
+        is_input_same_as_output = os.path.abspath(original_path) == os.path.abspath(result_path)
         try:
-            shutil.copy2(original_path, result_path)
-            
+            if not is_video:
+                if not is_input_same_as_output:
+                    shutil.copy2(original_path, result_path)
+            else:
+                if self._is_playable_mp4(original_path):
+                    if not is_input_same_as_output:
+                        shutil.copy2(original_path, result_path)
+                    else:
+                        print("Result already playable and at correct location. Skipping copy.")
+                else:
+                    temp_path = str(result_path) + '.temp.mp4'
+                    subprocess.run([
+                        '/usr/bin/ffmpeg', '-y', '-i', original_path,
+                        '-c:v', 'libx264', '-preset', 'fast', '-crf', '22',
+                        '-c:a', 'aac', '-b:a', '128k',
+                        '-movflags', '+faststart',
+                        temp_path
+                    ], check=True)
+                    os.replace(temp_path, result_path)
+
             # Create result info
             result_info = {
                 "id": result_id,
@@ -188,7 +221,7 @@ class FileManager:
             self._update_session_metadata(session_id, "results", result_info)
             
             print(f"Saved result {result_id} for upload {upload_id} in session {session_id}")
-            
+                
             return result_info, None
         except Exception as e:
             error_msg = f"Error copying result file: {str(e)}"
