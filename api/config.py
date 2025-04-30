@@ -16,7 +16,7 @@ class Config:
 
     # Model paths
     SAPIENS_MODELS = {
-        'sapiens_2b': '/mnt/DATA/dong/sapiens_2b_coco_best_coco_AP_822_torchscript.pt2',
+        # 'sapiens_2b': '/mnt/DATA/dong/sapiens_2b_coco_best_coco_AP_822_torchscript.pt2',
         'sapiens_1b': '/mnt/DATA/dong/sapiens_1b_coco_best_coco_AP_821_torchscript.pt2',
         'sapiens_0.6b': '/mnt/DATA/dong/sapiens_0.6b_coco_best_coco_AP_812_torchscript.pt2',
         'sapiens_0.3b': '/mnt/DATA/dong/sapiens_0.3b_coco_best_coco_AP_796_torchscript.pt2'

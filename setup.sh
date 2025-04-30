@@ -11,7 +11,7 @@ repo_checkout(){
         "https://github.com/open-mmlab/mmcv.git"
         # "https://github.com/ViTAE-Transformer/ViTPose.git"
         "https://github.com/shubham-goel/4D-Humans.git FDHumans"
-        "https://github.com/facebookresearch/sapiens.git"
+        # "https://github.com/facebookresearch/sapiens.git" # no need to checkout sapiens github repo, we will use the lite version
     )
 
     # Directory to clone repositories into
@@ -73,25 +73,27 @@ download_sapiens_models() {
     echo "Downloading Sapiens models..."
     
     # Create model directory
-    mkdir -p models/sapiens
-    cd models/sapiens
+    mkdir -p api/models/sapiens/checkpoints
+    cd api/models/sapiens/checkpoints
     
     # Download Sapiens models using curl
     # These URLs would need to be replaced with the actual download URLs for the models
     
-    # 2B model
-    echo "Downloading Sapiens 2B model..."
-    if [ ! -f "sapiens_2b_coco_best_coco_AP_822_torchscript.pt2" ]; then
-        curl -L -o sapiens_2b_coco_best_coco_AP_822_torchscript.pt2 "https://dl.fbaipublicfiles.com/sapien/sapiens_2b_coco_best_coco_AP_822_torchscript.pt2"
-        echo "Downloaded Sapiens 2B model"
-    else
-        echo "Sapiens 2B model already exists, skipping download"
-    fi
+    # 2B model they no longer have the 2B model available
+    # echo "Downloading Sapiens 2B model..."
+    # if [ ! -f "sapiens_2b_coco_best_coco_AP_822_torchscript.pt2" ]; then
+    #     curl -L -o sapiens_2b_coco_best_coco_AP_822_torchscript.pt2 "https://dl.fbaipublicfiles.com/sapien/sapiens_2b_coco_best_coco_AP_822_torchscript.pt2"
+    #     echo "Downloaded Sapiens 2B model"
+    # else
+    #     echo "Sapiens 2B model already exists, skipping download"
+    # fi
     
     # 1B model
     echo "Downloading Sapiens 1B model..."
-    if [ ! -f "sapiens_1b_coco_best_coco_AP_821_torchscript.pt2" ]; then
-        curl -L -o sapiens_1b_coco_best_coco_AP_821_torchscript.pt2 "https://dl.fbaipublicfiles.com/sapien/sapiens_1b_coco_best_coco_AP_821_torchscript.pt2"
+    # if [ ! -f "sapiens_1b_coco_best_coco_AP_821_torchscript.pt2" ]; then
+        # curl -L -o sapiens_1b_coco_best_coco_AP_821_torchscript.pt2 "https://dl.fbaipublicfiles.com/sapien/sapiens_1b_coco_best_coco_AP_821_torchscript.pt2"
+    if [ ! -f "sapiens_1b_goliath_best_goliath_AP_639.pth" ]; then
+        curl -L -o sapiens_1b_goliath_best_goliath_AP_639.pth "https://huggingface.co/facebook/sapiens-pose-1b/resolve/main/sapiens_1b_goliath_best_goliath_AP_639.pth?download=true"
         echo "Downloaded Sapiens 1B model"
     else
         echo "Sapiens 1B model already exists, skipping download"
@@ -99,8 +101,10 @@ download_sapiens_models() {
     
     # 0.6B model
     echo "Downloading Sapiens 0.6B model..."
-    if [ ! -f "sapiens_0.6b_coco_best_coco_AP_812_torchscript.pt2" ]; then
-        curl -L -o sapiens_0.6b_coco_best_coco_AP_812_torchscript.pt2 "https://dl.fbaipublicfiles.com/sapien/sapiens_0.6b_coco_best_coco_AP_812_torchscript.pt2"
+    # if [ ! -f "sapiens_0.6b_coco_best_coco_AP_812_torchscript.pt2" ]; then
+    #     curl -L -o sapiens_0.6b_coco_best_coco_AP_812_torchscript.pt2 "https://dl.fbaipublicfiles.com/sapien/sapiens_0.6b_coco_best_coco_AP_812_torchscript.pt2"
+    if [ ! -f "sapiens_0.6b_goliath_best_goliath_AP_609.pth" ]; then
+        curl -L -o sapiens_0.6b_goliath_best_goliath_AP_609.pth "https://huggingface.co/facebook/sapiens-pose-0.6b/resolve/main/sapiens_0.6b_goliath_best_goliath_AP_609.pth?download=true"
         echo "Downloaded Sapiens 0.6B model"
     else
         echo "Sapiens 0.6B model already exists, skipping download"
@@ -108,14 +112,16 @@ download_sapiens_models() {
     
     # 0.3B model
     echo "Downloading Sapiens 0.3B model..."
-    if [ ! -f "sapiens_0.3b_coco_best_coco_AP_796_torchscript.pt2" ]; then
-        curl -L -o sapiens_0.3b_coco_best_coco_AP_796_torchscript.pt2 "https://dl.fbaipublicfiles.com/sapien/sapiens_0.3b_coco_best_coco_AP_796_torchscript.pt2"
+    # if [ ! -f "sapiens_0.3b_coco_best_coco_AP_796_torchscript.pt2" ]; then
+    #     curl -L -o sapiens_0.3b_coco_best_coco_AP_796_torchscript.pt2 "https://dl.fbaipublicfiles.com/sapien/sapiens_0.3b_coco_best_coco_AP_796_torchscript.pt2"
+    if [ ! -f "sapiens_0.3b_goliath_best_goliath_AP_573.pth" ]; then
+        curl -L -o sapiens_0.3b_goliath_best_goliath_AP_573.pth "https://huggingface.co/facebook/sapiens-pose-0.3b/resolve/main/sapiens_0.3b_goliath_best_goliath_AP_573.pth?download=true"
         echo "Downloaded Sapiens 0.3B model"
     else
         echo "Sapiens 0.3B model already exists, skipping download"
     fi
     
-    cd ../..
+    cd ../../../.. # Go back to the original directory
     echo "All Sapiens models downloaded successfully"
 }
 
