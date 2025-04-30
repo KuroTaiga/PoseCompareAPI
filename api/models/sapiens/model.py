@@ -194,12 +194,15 @@ class SapiensProcessor:
                 num_workers=max(min(self.batch_size, cpu_count()) // 4, 4),
             )
             
+            # this change was made to accommodate the windows environment
+            # window's way of serialize the function is different from linux, which uses fork
+            from .model import preprocess_pose_worker, img_save_and_vis_worker
             # Initialize worker pools
             pose_preprocess_pool = WorkerPool(
-                self.preprocess_pose, processes=max(min(self.batch_size, cpu_count()), 1)
+                preprocess_pose_worker, processes=max(min(self.batch_size, cpu_count()), 1)
             )
             img_save_pool = WorkerPool(
-                self.img_save_and_vis, processes=max(min(self.batch_size, cpu_count()), 1)
+                img_save_and_vis_worker, processes=max(min(self.batch_size, cpu_count()), 1)
             )
             
             # For keypoint tracking
@@ -423,111 +426,6 @@ class SapiensProcessor:
                 heatmaps = (heatmaps + heatmaps_) * 0.5
             imgs.cpu()
         return heatmaps.cpu()
-
-    def img_save_and_vis(self, img, results, output_path, input_shape, heatmap_scale, kpt_colors, kpt_thr, radius, skeleton_info, thickness):
-        """Save and visualize pose estimation results"""
-        heatmap = results["heatmaps"]
-        centres = results["centres"]
-        scales = results["scales"]
-        instance_keypoints = []
-        instance_scores = []
-        
-        for i in range(len(heatmap)):
-            result = udp_decode(
-                heatmap[i].cpu().unsqueeze(0).float().data[0].numpy(),
-                input_shape,
-                (int(input_shape[0] / heatmap_scale), int(input_shape[1] / heatmap_scale)),
-            )
-
-            keypoints, keypoint_scores = result
-            keypoints = (keypoints / input_shape) * scales[i] + centres[i] - 0.5 * scales[i]
-            instance_keypoints.append(keypoints[0])
-            instance_scores.append(keypoint_scores[0])
-
-        pred_save_path = output_path.replace(".jpg", ".json").replace(".png", ".json")
-
-        with open(pred_save_path, "w") as f:
-            json.dump(
-                dict(
-                    instance_info=[
-                        {
-                            "keypoints": keypoints.tolist(),
-                            "keypoint_scores": keypoint_scores.tolist(),
-                        }
-                        for keypoints, keypoint_scores in zip(
-                            instance_keypoints, instance_scores
-                        )
-                    ]
-                ),
-                f,
-                indent="\t",
-            )
-        
-        instance_keypoints = np.array(instance_keypoints).astype(np.float32)
-        instance_scores = np.array(instance_scores).astype(np.float32)
-
-        keypoints_visible = np.ones(instance_keypoints.shape[:-1])
-        for kpts, score, visible in zip(
-            instance_keypoints, instance_scores, keypoints_visible
-        ):
-            kpts = np.array(kpts, copy=False)
-
-            if (
-                kpt_colors is None
-                or isinstance(kpt_colors, str)
-                or len(kpt_colors) != len(kpts)
-            ):
-                raise ValueError(
-                    f"the length of kpt_color "
-                    f"({len(kpt_colors)}) does not matches "
-                    f"that of keypoints ({len(kpts)})"
-                )
-
-            # draw each point on image
-            for kid, kpt in enumerate(kpts):
-                if score[kid] < kpt_thr or not visible[kid] or kpt_colors[kid] is None:
-                    # skip the point that should not be drawn
-                    continue
-
-                color = kpt_colors[kid]
-                if not isinstance(color, str):
-                    color = tuple(int(c) for c in color[::-1])
-                img = cv2.circle(img, (int(kpt[0]), int(kpt[1])), int(radius), color, -1)
-            
-            # draw skeleton
-            for skid, link_info in skeleton_info.items():
-                pt1_idx, pt2_idx = link_info['link']
-                color = link_info['color'][::-1] # BGR
-
-                pt1 = kpts[pt1_idx]; pt1_score = score[pt1_idx]
-                pt2 = kpts[pt2_idx]; pt2_score = score[pt2_idx]
-
-                if pt1_score > kpt_thr and pt2_score > kpt_thr:
-                    x1_coord = int(pt1[0]); y1_coord = int(pt1[1])
-                    x2_coord = int(pt2[0]); y2_coord = int(pt2[1])
-                    cv2.line(img, (x1_coord, y1_coord), (x2_coord, y2_coord), color, thickness=thickness)
-
-        cv2.imwrite(output_path, img)
-
-    def preprocess_pose(self, orig_img, bboxes_list, input_shape, mean, std):
-        """Preprocess pose images and bboxes."""
-        preprocessed_images = []
-        centers = []
-        scales = []
-        for bbox in bboxes_list:
-            img, center, scale = top_down_affine_transform(orig_img.copy(), bbox)
-            img = cv2.resize(
-                img, (input_shape[1], input_shape[0]), interpolation=cv2.INTER_LINEAR
-            ).transpose(2, 0, 1)
-            img = torch.from_numpy(img)
-            img = img[[2, 1, 0], ...].float()
-            mean = torch.Tensor(mean).view(-1, 1, 1)
-            std = torch.Tensor(std).view(-1, 1, 1)
-            img = (img - mean) / std
-            preprocessed_images.append(img)
-            centers.extend(center)
-            scales.extend(scale)
-        return preprocessed_images, centers, scales
     
     def _save_original_video_size(self, video_path):
         """
@@ -633,3 +531,95 @@ class SapiensProcessor:
         
         out.release()
         print(f"Video saved to {output_path}")
+
+def preprocess_pose_worker(orig_img, bboxes_list, input_shape, mean, std):
+    """Preprocess pose images and bboxes."""
+    from .util import top_down_affine_transform
+    import torch
+    import numpy as np
+    import cv2
+
+    preprocessed_images = []
+    centers = []
+    scales = []
+    for bbox in bboxes_list:
+        img, center, scale = top_down_affine_transform(orig_img.copy(), bbox)
+        img = cv2.resize(img, (input_shape[1], input_shape[0]), interpolation=cv2.INTER_LINEAR).transpose(2, 0, 1)
+        img = torch.from_numpy(img)
+        img = img[[2, 1, 0], ...].float()
+        mean = torch.Tensor(mean).view(-1, 1, 1)
+        std = torch.Tensor(std).view(-1, 1, 1)
+        img = (img - mean) / std
+        preprocessed_images.append(img)
+        centers.extend(center)
+        scales.extend(scale)
+    return preprocessed_images, centers, scales
+
+
+def img_save_and_vis_worker(img, results, output_path, input_shape, heatmap_scale, kpt_colors, kpt_thr, radius, skeleton_info, thickness):
+    """Save and visualize pose estimation results"""
+    import numpy as np
+    import torch
+    import cv2
+    import json
+    from .util import udp_decode
+
+    heatmap = results["heatmaps"]
+    centres = results["centres"]
+    scales = results["scales"]
+    instance_keypoints = []
+    instance_scores = []
+
+    for i in range(len(heatmap)):
+        result = udp_decode(
+            heatmap[i].cpu().unsqueeze(0).float().data[0].numpy(),
+            input_shape,
+            (int(input_shape[0] / heatmap_scale), int(input_shape[1] / heatmap_scale)),
+        )
+
+        keypoints, keypoint_scores = result
+        keypoints = (keypoints / input_shape) * scales[i] + centres[i] - 0.5 * scales[i]
+        instance_keypoints.append(keypoints[0])
+        instance_scores.append(keypoint_scores[0])
+
+    pred_save_path = output_path.replace(".jpg", ".json").replace(".png", ".json")
+    with open(pred_save_path, "w") as f:
+        json.dump(
+            dict(
+                instance_info=[
+                    {
+                        "keypoints": keypoints.tolist(),
+                        "keypoint_scores": keypoint_scores.tolist(),
+                    }
+                    for keypoints, keypoint_scores in zip(instance_keypoints, instance_scores)
+                ]
+            ),
+            f,
+            indent="\t",
+        )
+
+    instance_keypoints = np.array(instance_keypoints).astype(np.float32)
+    instance_scores = np.array(instance_scores).astype(np.float32)
+
+    keypoints_visible = np.ones(instance_keypoints.shape[:-1])
+    for kpts, score, visible in zip(instance_keypoints, instance_scores, keypoints_visible):
+        if kpt_colors is None or isinstance(kpt_colors, str) or len(kpt_colors) != len(kpts):
+            raise ValueError(f"Mismatch in keypoint color length: {len(kpt_colors)} vs {len(kpts)}")
+
+        for kid, kpt in enumerate(kpts):
+            if score[kid] < kpt_thr or not visible[kid] or kpt_colors[kid] is None:
+                continue
+            color = kpt_colors[kid]
+            if not isinstance(color, str):
+                color = tuple(int(c) for c in color[::-1])
+            img = cv2.circle(img, (int(kpt[0]), int(kpt[1])), int(radius), color, -1)
+
+        for skid, link_info in skeleton_info.items():
+            pt1_idx, pt2_idx = link_info['link']
+            color = link_info['color'][::-1]
+            pt1 = kpts[pt1_idx]; pt1_score = score[pt1_idx]
+            pt2 = kpts[pt2_idx]; pt2_score = score[pt2_idx]
+            if pt1_score > kpt_thr and pt2_score > kpt_thr:
+                cv2.line(img, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])), color, thickness=thickness)
+
+    cv2.imwrite(output_path, img)

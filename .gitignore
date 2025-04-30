@@ -16,3 +16,4 @@ build/
 *.mp4
 /storage
 *.pth
+*.pt2

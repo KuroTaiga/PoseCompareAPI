@@ -15,11 +15,17 @@ class Config:
     ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'webm'}
 
     # Model paths
+    SAPIENS_CHECKPOINT_ROOT = "api/models/sapiens/checkpoints"
+    DEFAULT_CHECKPOINT = SAPIENS_CHECKPOINT_ROOT+"/sapiens_1b_coco_best_coco_AP_821_torchscript.pt2"
+    # DEFAULT_CHECKPOINT = SAPIENS_CHECKPOINT_ROOT+"/sapiens_1b_goliath_best_goliath_AP_639.pth"
     SAPIENS_MODELS = {
-        # 'sapiens_2b': '/mnt/DATA/dong/sapiens_2b_coco_best_coco_AP_822_torchscript.pt2',
-        'sapiens_1b': '/mnt/DATA/dong/sapiens_1b_coco_best_coco_AP_821_torchscript.pt2',
-        'sapiens_0.6b': '/mnt/DATA/dong/sapiens_0.6b_coco_best_coco_AP_812_torchscript.pt2',
-        'sapiens_0.3b': '/mnt/DATA/dong/sapiens_0.3b_coco_best_coco_AP_796_torchscript.pt2'
+    'sapiens_2b': SAPIENS_CHECKPOINT_ROOT+'/sapiens_2b_coco_best_coco_AP_822_torchscript.pt2',
+    'sapiens_1b': SAPIENS_CHECKPOINT_ROOT+'/sapiens_1b_coco_best_coco_AP_821_torchscript.pt2',
+    'sapiens_0.6b': SAPIENS_CHECKPOINT_ROOT+'/sapiens_0.6b_coco_best_coco_AP_812_torchscript.pt2',
+    'sapiens_0.3b': SAPIENS_CHECKPOINT_ROOT+'/sapiens_0.3b_coco_best_coco_AP_796_torchscript.pt2'
+    # 'sapiens_1b': SAPIENS_CHECKPOINT_ROOT+'/sapiens_1b_goliath_best_goliath_AP_639.pth',
+    # 'sapiens_0.6b': SAPIENS_CHECKPOINT_ROOT+'/sapiens_0.6b_goliath_best_goliath_AP_609.pth',
+    # 'sapiens_0.3b': SAPIENS_CHECKPOINT_ROOT+'/sapiens_0.3b_goliath_best_goliath_AP_573.pth'
     }
 
     # Processing parameters

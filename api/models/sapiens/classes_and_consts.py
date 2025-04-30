@@ -725,8 +725,7 @@ COCO_WHOLEBODY_SKELETON_INFO = {
     63: dict(link=(130, 131), id=63, color=[0, 255, 0]),
     64: dict(link=(131, 132), id=64, color=[0, 255, 0])
 }
-SAPIENS_CHECKPOINT_ROOT = "api/models/sapiens/checkpoints"
-DEFAULT_CHECKPOINT = SAPIENS_CHECKPOINT_ROOT+"/sapiens_1b_coco_best_coco_AP_822_torchscript.pt2"
+
 DEFAULT_SHAPE = [1024, 768]  # [height, width]
 DEFAULT_MEAN = [123.5, 116.5, 103.5]
 DEFAULT_STD = [58.5, 57.0, 57.5]
@@ -735,8 +734,15 @@ DEFAULT_FILTER_WINDOW = 5
 DEFAULT_KPT_THRESHOLD = 0.3
 
 # Sapiens model paths
+SAPIENS_CHECKPOINT_ROOT = "api/models/sapiens/checkpoints"
+# DEFAULT_CHECKPOINT = SAPIENS_CHECKPOINT_ROOT+"/sapiens_1b_goliath_best_goliath_AP_639.pth"
+DEFAULT_CHECKPOINT = SAPIENS_CHECKPOINT_ROOT+"/sapiens_1b_coco_best_coco_AP_821_torchscript.pt2"
 SAPIENS_MODELS = {
-    # 'sapiens_2b': '/mnt/DATA/dong/sapiens_2b_coco_best_coco_AP_822_torchscript.pt2',
+    # 'sapiens_2b': '/mnt/DATA/dong/sapiens_2b_coco_best_coco_AP_822_torchscript.pth',
+    # 'sapiens_1b': SAPIENS_CHECKPOINT_ROOT+'/sapiens_1b_goliath_best_goliath_AP_639.pth',
+    # 'sapiens_0.6b': SAPIENS_CHECKPOINT_ROOT+'/sapiens_0.6b_goliath_best_goliath_AP_609.pth',
+    # 'sapiens_0.3b': SAPIENS_CHECKPOINT_ROOT+'/sapiens_0.3b_goliath_best_goliath_AP_573.pth'
+    'sapiens_2b': SAPIENS_CHECKPOINT_ROOT+'/sapiens_2b_coco_best_coco_AP_822_torchscript.pt2',
     'sapiens_1b': SAPIENS_CHECKPOINT_ROOT+'/sapiens_1b_coco_best_coco_AP_821_torchscript.pt2',
     'sapiens_0.6b': SAPIENS_CHECKPOINT_ROOT+'/sapiens_0.6b_coco_best_coco_AP_812_torchscript.pt2',
     'sapiens_0.3b': SAPIENS_CHECKPOINT_ROOT+'/sapiens_0.3b_coco_best_coco_AP_796_torchscript.pt2'
