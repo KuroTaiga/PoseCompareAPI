@@ -38,8 +38,6 @@ from processors.interpolation import PoseInterpolation
 from utils.visualization import PoseVisualizer
 from .worker_pool import WorkerPool
 
-
-
 class AdhocImageDataset(torch.utils.data.Dataset):
     """Dataset for processing images without predefined transformations"""
     def __init__(self, image_list, shape=None, mean=None, std=None):
@@ -73,6 +71,35 @@ class AdhocImageDataset(torch.utils.data.Dataset):
         orig_img = cv2.imread(orig_img_dir)
         img = self._preprocess(orig_img)
         return orig_img_dir, orig_img, img
+
+def scale_keypoints_to_original(keypoints, original_width, original_height, resized_width, resized_height):
+    """
+    Scale keypoints from resized video dimensions to original video dimensions
+    
+    Args:
+        keypoints: List of keypoints [x, y, z, confidence]
+        original_width: Original video width
+        original_height: Original video height
+        resized_width: Resized video width
+        resized_height: Resized video height
+        
+    Returns:
+        Scaled keypoints
+    """
+    scaled_keypoints = []
+    
+    for kp in keypoints:
+        # Extract coordinates and confidence
+        x, y, z, conf = kp
+        
+        # Scale x and y to original dimensions
+        x_scaled = (x / resized_width) * original_width
+        y_scaled = (y / resized_height) * original_height
+        
+        # Add scaled keypoint
+        scaled_keypoints.append([x_scaled, y_scaled, z, conf])
+    
+    return scaled_keypoints
 
 class SapiensProcessor:
     """Processor for Sapiens pose estimation model"""
@@ -154,9 +181,6 @@ class SapiensProcessor:
         try:
             # Save original video size and information
             self._save_original_video_size(input_path)
-            # Calculate scale factors for resizing keypoints back to original dimensions
-            scale_width = self.original_width / self.shape[1]
-            scale_height = self.original_height / self.shape[0]
             
             # Resize for processing if needed
             resized_video_path = os.path.splitext(input_path)[0] + "_resized.mp4"
@@ -311,10 +335,7 @@ class SapiensProcessor:
                             
                             # Convert keypoints to image coordinates
                             kpts = (kpts / input_shape[1:]) * scale + centre - 0.5 * scale
-                            # Scale keypoints back to original video dimensions
-                            kpts_orig_scale = kpts.copy()
-                            kpts_orig_scale[0, :, 0] = kpts[0, :, 0] * scale_width  # Scale x coordinates
-                            kpts_orig_scale[0, :, 1] = kpts[0, :, 1] * scale_height  # Scale y coordinates
+
                             
                             # Format as COCO keypoints with confidence
                             coco_kpts = []
@@ -340,8 +361,8 @@ class SapiensProcessor:
                         radius,
                         COCO_SKELETON_INFO,
                         thickness,
-                        scale_width,
-                        scale_height,
+                        self.original_width,
+                        self.original_height,
                     )
                     for i, r, img_name in zip(
                         batch_orig_imgs[:valid_images_len],
@@ -384,13 +405,26 @@ class SapiensProcessor:
             
             # Generate output video from processed frames
             print("Writing video from processed frames...")
-            self.img_to_vid(out_img_folder, output_path,resize_to=(self.original_width, self.original_height))
+            self.img_to_vid(out_img_folder, output_path)
             
             # Save keypoints to JSON if requested
             if save_keypoints and output_json_path and all_coco_keypoints:
-                print(f"Saving {len(all_coco_keypoints)} keypoints frames to {output_json_path}")
+                print(f"Scaling and saving {len(all_coco_keypoints)} keypoints frames to {output_json_path}")
                 
-                # Save keypoints to JSON
+                # Scale keypoints to original video dimensions
+                scaled_keypoints = []
+                for frame_keypoints in all_coco_keypoints:
+                    # Scale keypoints from resized dimensions to original video dimensions
+                    scaled_frame_keypoints = scale_keypoints_to_original(
+                        frame_keypoints,
+                        self.original_width,
+                        self.original_height,
+                        self.shape[1],  # resized width 
+                        self.shape[0]   # resized height
+                    )
+                    scaled_keypoints.append(scaled_frame_keypoints)
+                
+                # Save scaled keypoints to JSON
                 metadata = {
                     "model": os.path.basename(self.checkpoint),
                     "method": method,
@@ -403,7 +437,7 @@ class SapiensProcessor:
                 }
                 
                 JointDataProcessor.save_keypoints_to_json(
-                    all_coco_keypoints,
+                    scaled_keypoints,  # Use scaled keypoints instead of original
                     all_frame_indices,
                     output_json_path,
                     metadata=metadata,
@@ -520,11 +554,8 @@ class SapiensProcessor:
         cap.release()
         return output_dir
     
-    def img_to_vid(self, img_folder, output_path, fps=None,resize_to = None):
-        print(f"saving img from {img_folder} to {output_path}")
+    def img_to_vid(self, img_folder, output_path, fps=None):
         """Create a video from a sequence of images"""
-        if not os.path.exists(img_folder):
-            raise FileNotFoundError(f"Img folder not found{img_folder}")
         if fps is None:
             fps = self.fps if hasattr(self, 'fps') else 30
             
@@ -534,67 +565,35 @@ class SapiensProcessor:
             return
         
         frame = cv2.imread(os.path.join(img_folder, images[0]))
-        if frame is None:
-            print(f"Error: Failed reading first image")
         height, width, _ = frame.shape
-        print(height,width)
         
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        
-        if resize_to:
-            output_width, output_height = resize_to
+        # Check if we need to resize back to original dimensions
+        if hasattr(self, 'original_width') and hasattr(self, 'original_height'):
+            orig_size = (self.original_width, self.original_height)
+            needs_resize = (width != self.original_width) or (height != self.original_height)
         else:
-            output_width, output_height = width, height
-        out = cv2.VideoWriter(output_path, fourcc, fps, (output_width, output_height))
-        frame_count = 0
+            orig_size = (width, height)
+            needs_resize = False
+        
+        # Create video writer with the correct dimensions
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(output_path, fourcc, fps, orig_size)
+        
         for image_name in images:
             frame = cv2.imread(os.path.join(img_folder, image_name))
-            if frame is None:
-                print(f"Error: failed reading {image_name}")
-            if resize_to:
-                frame = cv2.resize(frame,(output_width,output_height),interpolation=cv2.INTER_LINEAR)
+            
+            # Resize frame if needed to match original video dimensions
+            if needs_resize:
+                frame = cv2.resize(frame, orig_size, interpolation=cv2.INTER_LINEAR)
+                
             out.write(frame)
-            frame_count+=1
-        print(frame_count)
-        out.release()
-        print(f"Video saved to {output_path}")
-
-# def preprocess_pose_worker(orig_img, bboxes_list, input_shape, mean, std):
-#     """Preprocess pose images and bboxes."""
-#     from .util import top_down_affine_transform
-#     import torch
-#     import numpy as np
-#     import cv2
-
-#     preprocessed_images = []
-#     centers = []
-#     scales = []
-#     for bbox in bboxes_list:
-#         img, center, scale = top_down_affine_transform(orig_img.copy(), bbox)
-#         img = cv2.resize(img, (input_shape[1], input_shape[0]), interpolation=cv2.INTER_LINEAR).transpose(2, 0, 1)
-#         img = torch.from_numpy(img)
-#         img = img[[2, 1, 0], ...].float()
-#         mean = torch.Tensor(mean).view(-1, 1, 1)
-#         std = torch.Tensor(std).view(-1, 1, 1)
-#         img = (img - mean) / std
-#         preprocessed_images.append(img)
-#         centers.extend(center)
-#         scales.extend(scale)
-#     return preprocessed_images, centers, scales
-def preprocess_pose_worker(orig_img, bboxes_list, input_shape, mean, std):
-    """
-    Preprocess pose images using fixed center and scale.
-    
-    Args:
-        orig_img: Original image
-        bboxes_list: List of bounding boxes
-        input_shape: Input shape for model (h, w)
-        mean: Mean values for normalization
-        std: Standard deviation values for normalization
         
-    Returns:
-        Tuple of (preprocessed_images, centers, scales)
-    """
+        out.release()
+        print(f"Video saved to {output_path} with dimensions {orig_size}")
+
+# Keep these functions outside the class for worker pool compatibility
+def preprocess_pose_worker(orig_img, bboxes_list, input_shape, mean, std):
+    """Preprocess pose images using fixed center and scale."""
     import torch
     import numpy as np
     import cv2
@@ -609,41 +608,21 @@ def preprocess_pose_worker(orig_img, bboxes_list, input_shape, mean, std):
     scale = max(H, W) * 1.0  # scale matches full frame
     
     for _ in bboxes_list:
-        # Resize to model input size
+        # Crop center with identity transform (no actual cropping)
         img = cv2.resize(orig_img.copy(), (input_shape[1], input_shape[0]), interpolation=cv2.INTER_LINEAR)
-        img = img.transpose(2, 0, 1)  # Convert HWC to CHW
+        img = img.transpose(2, 0, 1)
         img = torch.from_numpy(img)
-        img = img[[2, 1, 0], ...].float()  # Convert BGR to RGB
-        
-        # Normalize
-        mean_tensor = torch.Tensor(mean).view(-1, 1, 1)
-        std_tensor = torch.Tensor(std).view(-1, 1, 1)
-        img = (img - mean_tensor) / std_tensor
-        
+        img = img[[2, 1, 0], ...].float()
+        mean = torch.Tensor(mean).view(-1, 1, 1)
+        std = torch.Tensor(std).view(-1, 1, 1)
+        img = (img - mean) / std
         preprocessed_images.append(img)
         centers.append(center)
         scales.append(scale)
-        
     return preprocessed_images, centers, scales
 
-def img_save_and_vis_worker(img, results, output_path, input_shape, heatmap_scale, kpt_colors, kpt_thr, radius, skeleton_info, thickness, scale_width=1.0, scale_height=1.0):
-    """
-    Save and visualize pose estimation results with scaling to original dimensions
-    
-    Args:
-        img: Original image
-        results: Prediction results with heatmaps
-        output_path: Path to save visualization
-        input_shape: Input shape for model
-        heatmap_scale: Scale for heatmap
-        kpt_colors: Colors for keypoints
-        kpt_thr: Threshold for keypoint confidence
-        radius: Radius of keypoint circles
-        skeleton_info: Skeleton connections info
-        thickness: Line thickness for skeleton
-        scale_width: Scale factor for x coordinates to match original video width
-        scale_height: Scale factor for y coordinates to match original video height
-    """
+def img_save_and_vis_worker(img, results, output_path, input_shape, heatmap_scale, kpt_colors, kpt_thr, radius, skeleton_info, thickness, out_width, out_height):
+    """Save and visualize pose estimation results"""
     import numpy as np
     import torch
     import cv2
@@ -656,6 +635,22 @@ def img_save_and_vis_worker(img, results, output_path, input_shape, heatmap_scal
     instance_keypoints = []
     instance_scores = []
 
+    # Get the dimensions of the output image for proper scaling
+    H, W = img.shape[:2]  # Height and width of the current frame
+    
+    # Calculate the actual aspect ratio for proper scaling
+    model_aspect_ratio = input_shape[0] / input_shape[1]  # width / height
+    frame_aspect_ratio = W / H
+    
+    # We'll resize the current frame to match the output dimensions
+    if out_width != W or out_height != H:
+        # Only resize once and do all drawing on the properly sized image
+        img = cv2.resize(img, (out_width, out_height), interpolation=cv2.INTER_LINEAR)
+    
+    # Determine the effective scaling factor from model space to output space
+    scale_factor_x = out_width / input_shape[0]
+    scale_factor_y = out_height / input_shape[1]
+    
     for i in range(len(heatmap)):
         result = udp_decode(
             heatmap[i].cpu().unsqueeze(0).float().data[0].numpy(),
@@ -664,20 +659,21 @@ def img_save_and_vis_worker(img, results, output_path, input_shape, heatmap_scal
         )
 
         keypoints, keypoint_scores = result
-        keypoints = (keypoints / input_shape) * scales[i] + centres[i] - 0.5 * scales[i]
         
-        # Scale keypoints to original video dimensions for JSON
-        keypoints_orig_scale = keypoints.copy()
-        keypoints_orig_scale[0, :, 0] = keypoints[0, :, 0] * scale_width
-        keypoints_orig_scale[0, :, 1] = keypoints[0, :, 1] * scale_height
+        # Apply a consistent direct scaling approach
+        # Skip the intermediate calculation using scales and centres
+        # This simplifies the mapping and avoids potential positioning errors
         
-        instance_keypoints.append(keypoints_orig_scale[0])
+        # Scale directly from model space to output dimensions
+        keypoints = keypoints.copy()  # Make a copy to avoid modifying the original
+        keypoints[0, :, 0] = (keypoints[0, :, 0] / input_shape[0]) * out_width
+        keypoints[0, :, 1] = (keypoints[0, :, 1] / input_shape[1]) * out_height
+        
+        # Store the keypoints for JSON output
+        instance_keypoints.append(keypoints[0])
         instance_scores.append(keypoint_scores[0])
 
-    # Save the keypoints with original scale to JSON
-    
     pred_save_path = output_path.replace(".jpg", ".json").replace(".png", ".json")
-    os.makedirs(os.path.dirname(pred_save_path), exist_ok=True)
     with open(pred_save_path, "w") as f:
         json.dump(
             dict(
@@ -685,10 +681,6 @@ def img_save_and_vis_worker(img, results, output_path, input_shape, heatmap_scal
                     {
                         "keypoints": keypoints.tolist(),
                         "keypoint_scores": keypoint_scores.tolist(),
-                        "original_scale": {
-                            "width_scale": float(scale_width),
-                            "height_scale": float(scale_height)
-                        }
                     }
                     for keypoints, keypoint_scores in zip(instance_keypoints, instance_scores)
                 ]
@@ -697,17 +689,14 @@ def img_save_and_vis_worker(img, results, output_path, input_shape, heatmap_scal
             indent="\t",
         )
 
-    # For visualization in the processed frames, we keep the coordinates at the processing resolution
-    # since we'll resize the entire video at the end
     instance_keypoints = np.array(instance_keypoints).astype(np.float32)
     instance_scores = np.array(instance_scores).astype(np.float32)
-
+    
     keypoints_visible = np.ones(instance_keypoints.shape[:-1])
     for kpts, score, visible in zip(instance_keypoints, instance_scores, keypoints_visible):
         if kpt_colors is None or isinstance(kpt_colors, str) or len(kpt_colors) != len(kpts):
             raise ValueError(f"Mismatch in keypoint color length: {len(kpt_colors)} vs {len(kpts)}")
 
-        # Draw keypoints
         for kid, kpt in enumerate(kpts):
             if score[kid] < kpt_thr or not visible[kid] or kpt_colors[kid] is None:
                 continue
@@ -715,17 +704,23 @@ def img_save_and_vis_worker(img, results, output_path, input_shape, heatmap_scal
             if not isinstance(color, str):
                 color = tuple(int(c) for c in color[::-1])
             
-            # Use the original keypoint coordinates for visualization
-            img = cv2.circle(img, (int(kpt[0]), int(kpt[1])), int(radius), color, -1)
+            # Coordinates are already scaled to output dimensions
+            x, y = int(kpt[0]), int(kpt[1])
+            img = cv2.circle(img, (x, y), int(radius), color, -1)
 
-        # Draw skeleton lines
         for skid, link_info in skeleton_info.items():
             pt1_idx, pt2_idx = link_info['link']
             color = link_info['color'][::-1]
             pt1 = kpts[pt1_idx]; pt1_score = score[pt1_idx]
             pt2 = kpts[pt2_idx]; pt2_score = score[pt2_idx]
             if pt1_score > kpt_thr and pt2_score > kpt_thr:
-                # Use the original keypoint coordinates for visualization
-                cv2.line(img, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])), color, thickness=thickness)
+                # Coordinates are already scaled to output dimensions
+                x1, y1 = int(pt1[0]), int(pt1[1])
+                x2, y2 = int(pt2[0]), int(pt2[1])
+                cv2.line(img, (x1, y1), (x2, y2), color, thickness=thickness)
 
+    # Save the final image with keypoints and skeleton
     cv2.imwrite(output_path, img)
+    
+    # Debug output to help with troubleshooting
+    # print(f"Saved visualization to {output_path} with dimensions {img.shape[1]}x{img.shape[0]}")  
