@@ -172,9 +172,16 @@ def process_video_task(app, job_id, session_id, upload_id, input_path, selected_
                             jobs[job_id]['errors'].append(error_msg)
                             continue
                         
-                        # Initialize model
+                        # Initialize model with session-specific parameters
                         from models.sapiens import SapiensProcessor
-                        sapiens_processor = SapiensProcessor(model_path, save_img_flag=False)
+                        sapiens_processor = SapiensProcessor(
+                            model_path, 
+                            save_img_flag=False,
+                            session_id=session_id,
+                            upload_id=upload_id,
+                            model_id=model,
+                            filter_method=noise_filter
+                        )
                         
                         # Process the video
                         success = sapiens_processor.process_video(
