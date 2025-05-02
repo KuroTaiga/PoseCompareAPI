@@ -115,6 +115,7 @@ class SapiensProcessor:
                  session_id=None,
                  upload_id=None,
                  model_id=None,
+                 job_id = None,
                  filter_method="original"):
         """
         Initialize Sapiens model processor
@@ -144,6 +145,7 @@ class SapiensProcessor:
         self.session_id = session_id
         self.upload_id = upload_id
         self.model_id = model_id or "sapiens"
+        self.job_id = job_id
         
         # Build the output root path
         self._build_output_path(output_folder)
@@ -169,9 +171,9 @@ class SapiensProcessor:
         if self.session_id and self.upload_id:
             # Use structure like: base_folder/session_id/upload_id/model_id_filter_method/
             filter_suffix = f"_{self.filter_method}" if self.filter_method != "original" else ""
-            job_id = f"{self.model_id}{filter_suffix}"
+            # job_id = f"{self.model_id}{filter_suffix}"
             
-            self.output_root = os.path.join(base_folder, str(self.session_id), str(self.upload_id), job_id)
+            self.output_root = os.path.join(base_folder, str(self.session_id), str(self.upload_id), str(self.job_id))
         else:
             self.output_root = base_folder
             
