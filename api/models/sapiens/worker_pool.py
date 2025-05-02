@@ -68,9 +68,9 @@ class WorkerPool(Pool):
         if 'maxtasksperchild' not in kwargs:
             kwargs['maxtasksperchild'] = 10
             
-        # Set a reasonable timeout to prevent deadlocks
-        if 'timeout' not in kwargs:
-            kwargs['timeout'] = 600  # 10 minutes
+        # Remove timeout if present (not supported by Pool.__init__)
+        if 'timeout' in kwargs:
+            del kwargs['timeout']
         super().__init__(*args, **kwargs)
 
     def _result_collector(self, result):
