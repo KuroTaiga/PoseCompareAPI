@@ -184,8 +184,9 @@ class FileManager:
         is_input_same_as_output = os.path.abspath(original_path) == os.path.abspath(result_path)
         try:
             if not is_video:
-                if not is_input_same_as_output:
-                    shutil.copy2(original_path, result_path)
+                pass
+                # if not is_input_same_as_output:
+                #     shutil.copy2(original_path, result_path)
             else:
                 if self._is_playable_mp4(original_path):
                     if not is_input_same_as_output:
