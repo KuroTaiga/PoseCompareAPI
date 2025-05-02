@@ -190,6 +190,9 @@ def process_with_model(model, app, job_id, session_id, upload_id, input_path, up
         
         # Get model path
         model_path = app.config['SAPIENS_MODELS'].get(model)
+        # Get batch size and max frames from config
+        batch_size = app.config['MODEL_BATCH_SIZES'].get(model, app.config.get('BATCH_SIZE', 4))
+        max_frames = app.config['MAX_FRAMES'].get(model, app.config.get('MAX_FRAMES', 600))
         if not model_path:
             error_msg = f"Model path not found for {model}"
             print(error_msg)
@@ -202,11 +205,11 @@ def process_with_model(model, app, job_id, session_id, upload_id, input_path, up
             device = "cuda:0" if torch.cuda.is_available() else "cpu"
             
             try:
-                sapiens_processor = SapiensProcessor(model_path, device=device, save_img_flag=False)
+                sapiens_processor = SapiensProcessor(model_path, device=device, batch_size=batch_size, save_img_flag=False)
             except RuntimeError as e:
                 if "CUDA out of memory" in str(e):
                     print(f"CUDA out of memory for {model}, falling back to CPU")
-                    sapiens_processor = SapiensProcessor(model_path, device="cpu", save_img_flag=False)
+                    sapiens_processor = SapiensProcessor(model_path, device="cpu", batch_size=batch_size, save_img_flag=False)
                 else:
                     raise
             
@@ -218,7 +221,8 @@ def process_with_model(model, app, job_id, session_id, upload_id, input_path, up
                 filter_window=filter_window,
                 output_json_path=output_json_path,
                 save_keypoints=True,
-                sample_rate=sample_rate
+                sample_rate=sample_rate,
+                max_frames=max_frames
             )
             
             # Explicitly delete the processor to release CUDA memory
