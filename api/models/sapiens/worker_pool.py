@@ -64,13 +64,13 @@ class WorkerPool(Pool):
             **kwargs: Keyword arguments to pass to Pool constructor
         """
         self.func = func
-        # Ensure maxtasksperchild is set to prevent memory leaks
-        if 'maxtasksperchild' not in kwargs:
-            kwargs['maxtasksperchild'] = 10
+        # # Ensure maxtasksperchild is set to prevent memory leaks
+        # if 'maxtasksperchild' not in kwargs:
+        #     kwargs['maxtasksperchild'] = 10
             
-        # Remove timeout if present (not supported by Pool.__init__)
-        if 'timeout' in kwargs:
-            del kwargs['timeout']
+        # # Remove timeout if present (not supported by Pool.__init__)
+        # if 'timeout' in kwargs:
+        #     del kwargs['timeout']
         super().__init__(*args, **kwargs)
 
     def _result_collector(self, result):

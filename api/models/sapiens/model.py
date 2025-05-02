@@ -222,7 +222,7 @@ class SapiensProcessor:
         try:
             # Create job-specific temporary paths
             video_basename = os.path.basename(os.path.splitext(input_path)[0])
-            job_temp_dir = os.path.join(self.output_root, "temp", video_basename)
+            job_temp_dir = os.path.join(self.output_root,"temp", video_basename)
             os.makedirs(job_temp_dir, exist_ok=True)
             
             resized_video_path = os.path.join(job_temp_dir, f"{video_basename}_resized.mp4")

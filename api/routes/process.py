@@ -205,7 +205,7 @@ def process_with_model(model, app, job_id, session_id, upload_id, input_path, up
             device = "cuda:0" if torch.cuda.is_available() else "cpu"
             
             try:
-                sapiens_processor = SapiensProcessor(model_path, device=device, batch_size=batch_size, save_img_flag=False)
+                sapiens_processor = SapiensProcessor(model_path, session_id=session_id, upload_id=upload_id,device=device, batch_size=batch_size, save_img_flag=False)
             except RuntimeError as e:
                 if "CUDA out of memory" in str(e):
                     print(f"CUDA out of memory for {model}, falling back to CPU")
