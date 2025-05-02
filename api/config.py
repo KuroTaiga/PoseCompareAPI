@@ -65,6 +65,23 @@ class Config:
         'density': 'Shows areas with highest concentration of pose landmarks',
         'trajectory': 'Tracks the path of key body points through the video'
     }
+    # Model batch sizes
+    MODEL_BATCH_SIZES = {
+        'mediapipe': 8,
+        'sapiens_0.3b': 8,
+        'sapiens_0.6b': 4,
+        'sapiens_1b': 2,
+        'sapiens_2b': 1  # Smallest batch size for largest model
+    }
+    
+    # Max frames to process in a single video
+    MAX_FRAMES = {
+        'mediapipe': 1000,
+        'sapiens_0.3b': 1000,
+        'sapiens_0.6b': 800,
+        'sapiens_1b': 600,
+        'sapiens_2b': 400  # Fewer frames for largest model
+    }
 
 class DevelopmentConfig(Config):
     """Development configuration"""

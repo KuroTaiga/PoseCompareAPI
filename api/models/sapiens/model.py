@@ -104,6 +104,7 @@ def scale_keypoints_to_original(keypoints, original_width, original_height, resi
 class SapiensProcessor:
     """Processor for Sapiens pose estimation model"""
     
+    _model_cache = {}  # Cache for loaded models to avoid reloading
     def __init__(self, 
                  checkpoint=DEFAULT_CHECKPOINT, 
                  device="cuda:0" if torch.cuda.is_available() else "cpu", 
@@ -130,6 +131,7 @@ class SapiensProcessor:
             model_id: Model identifier (for managing temp files)
             filter_method: Filtering or interpolation method (for managing temp files)
         """
+        
         self.save_flag = save_img_flag
         self.checkpoint = checkpoint
         self.device = device
@@ -146,16 +148,21 @@ class SapiensProcessor:
         # Build the output root path
         self._build_output_path(output_folder)
         
-        # Load the model
-        try:
-            print(f"Loading Sapiens model from {checkpoint}")
-            self.model = torch.jit.load(checkpoint)
-            self.model = self.model.to(self.device)
-            self.model.eval()
-            print(f"Sapiens model loaded successfully")
-        except Exception as e:
-            print(f"Failed to load Sapiens model: {e}")
-            raise
+        cache_key = f"{checkpoint}_{device}"
+        if cache_key in SapiensProcessor._model_cache:
+            print(f"Using cached Sapiens model for {checkpoint}")
+            self.model = SapiensProcessor._model_cache[cache_key]
+        else:
+            # Load the model
+            try:
+                print(f"Loading Sapiens model from {checkpoint}")
+                self.model = torch.jit.load(checkpoint)
+                self.model = self.model.to(self.device)
+                self.model.eval()
+                print(f"Sapiens model loaded successfully")
+            except Exception as e:
+                print(f"Failed to load Sapiens model: {e}")
+                raise
             
     def _build_output_path(self, base_folder):
         """Build the output path using session, upload, model and filter information"""

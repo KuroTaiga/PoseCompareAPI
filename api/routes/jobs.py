@@ -1,10 +1,40 @@
 from flask import Blueprint, jsonify, request, url_for, current_app, session
 import os
+import datetime
 from utils.file_manager import FileManager
 from routes.process import jobs
 
 # Create blueprint
 jobs_bp = Blueprint('jobs', __name__, url_prefix='/api/jobs')
+
+def cleanup_old_jobs():
+    """Clean up jobs that are older than 24 hours"""
+    current_time = datetime.datetime.now()
+    jobs_to_delete = []
+    
+    for job_id, job in jobs.items():
+        # Skip if no creation time (older jobs)
+        if 'created_at' not in job:
+            continue
+            
+        # Parse the creation time
+        try:
+            created_at = datetime.datetime.fromisoformat(job['created_at'])
+            age_hours = (current_time - created_at).total_seconds() / 3600
+            
+            # Mark for deletion if older than 24 hours
+            if age_hours > 24:
+                jobs_to_delete.append(job_id)
+        except (ValueError, TypeError):
+            # Skip if invalid date format
+            continue
+    
+    # Delete marked jobs
+    for job_id in jobs_to_delete:
+        if job_id in jobs:
+            del jobs[job_id]
+    
+    return len(jobs_to_delete)
 
 @jobs_bp.route('/<job_id>', methods=['GET'])
 def get_job_status(job_id):

@@ -32,6 +32,22 @@ def cleanup_task(app, interval_hours=1):
                 print(f"Cleaned up {deleted_count} expired sessions (older than {max_age_hours:.1f} hours)")
             except Exception as e:
                 print(f"Error in cleanup task: {str(e)}")
+def jobs_cleanup_task(app, interval_hours=2):
+    """Background thread to clean up old jobs"""
+    from routes.jobs import cleanup_old_jobs
+    
+    with app.app_context():
+        while True:
+            try:
+                # Sleep first to avoid immediate cleanup on startup
+                time.sleep(interval_hours * 3600)  # Convert hours to seconds
+                
+                # Clean up old jobs
+                deleted_count = cleanup_old_jobs()
+                
+                print(f"Cleaned up {deleted_count} old jobs")
+            except Exception as e:
+                print(f"Error in jobs cleanup task: {str(e)}")
 
 def create_app(config_name='development'):
     """Create and configure the Flask application"""
@@ -82,6 +98,15 @@ def create_app(config_name='development'):
         )
         cleanup_thread.start()
         print("Started background session cleanup thread")
+        # Jobs cleanup thread
+        jobs_cleanup_thread = threading.Thread(
+            target=jobs_cleanup_task,
+            args=(app, 2),  # Run every 2 hours
+            daemon=True
+        )
+        jobs_cleanup_thread.start()
+        
+        print("Started background cleanup threads")
     
     # Register blueprints
     app.register_blueprint(upload_bp)

@@ -64,6 +64,13 @@ class WorkerPool(Pool):
             **kwargs: Keyword arguments to pass to Pool constructor
         """
         self.func = func
+        # Ensure maxtasksperchild is set to prevent memory leaks
+        if 'maxtasksperchild' not in kwargs:
+            kwargs['maxtasksperchild'] = 10
+            
+        # Set a reasonable timeout to prevent deadlocks
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = 600  # 10 minutes
         super().__init__(*args, **kwargs)
 
     def _result_collector(self, result):
@@ -78,6 +85,10 @@ class WorkerPool(Pool):
         else:
             self.results.append(result)
 
+    def _handle_error(self, e):
+        """Handle errors from async operations"""
+        print(f"Error in worker process: {str(e)}")
+
     def run(self, iterable, chunksize=1):
         """
         Run the function on each item in the iterable synchronously
@@ -89,11 +100,16 @@ class WorkerPool(Pool):
         Returns:
             Results from the map operation
         """
-        if all(isinstance(x, (list, tuple)) for x in iterable):
-            results = self.starmap(self.func, iterable, chunksize)
-        else:
-            results = self.map(self.func, iterable)
-        return results
+        try:
+            if all(isinstance(x, (list, tuple)) for x in iterable):
+                results = self.starmap(self.func, iterable, chunksize)
+            else:
+                results = self.map(self.func, iterable)
+            return results
+        except Exception as e:
+            print(f"Error in worker pool: {str(e)}")
+            # Return empty results on error
+            return []
 
     def run_async(self, iterable, chunksize=1):
         """
@@ -107,23 +123,33 @@ class WorkerPool(Pool):
             List to store results (will be populated as tasks complete)
         """
         self.results = []
-        if all(isinstance(x, (list, tuple)) for x in iterable):
-            self.starmap_async(
-                AsyncWorkerExceptionsWrapper(self.func),
-                iterable,
-                chunksize,
-                callback=self._result_collector,
-            )
-        else:
-            self.map_async(
-                AsyncWorkerExceptionsWrapper(self.func),
-                iterable,
-                chunksize,
-                callback=self._result_collector,
-            )
-        return self.results
+        try:
+            if all(isinstance(x, (list, tuple)) for x in iterable):
+                self.starmap_async(
+                    AsyncWorkerExceptionsWrapper(self.func),
+                    iterable,
+                    chunksize,
+                    callback=self._result_collector,
+                    error_callback=self._handle_error,
+                )
+            else:
+                self.map_async(
+                    AsyncWorkerExceptionsWrapper(self.func),
+                    iterable,
+                    chunksize,
+                    callback=self._result_collector,
+                    error_callback=self._handle_error,
+                )
+            return self.results
+        except Exception as e:
+            print(f"Error in async worker pool: {str(e)}")
+            # Return empty results on error
+            return []
 
     def finish(self) -> None:
         """Shutdown the pool and clean-up threads"""
-        self.close()
-        self.join()
+        try:
+            self.close()
+            self.join()
+        except Exception as e:
+            print(f"Error shutting down worker pool: {str(e)}")
